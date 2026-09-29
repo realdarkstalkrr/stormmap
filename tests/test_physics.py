@@ -114,7 +114,10 @@ class DerivedTests(unittest.TestCase):
         self.assertIsNone(d["kindex"])    # needs 700 hPa dewpoint
         self.assertIsNotNone(d["tt"])
         self.assertGreaterEqual(d["threat"], 3)
-        self.assertAlmostEqual(d["gust"], 36.0)
+        self.assertEqual(d["gust"], 10)  # stored in m/s, converted in the browser
+        self.assertAlmostEqual(d["wind10"], 5.0)
+        self.assertAlmostEqual(d["rh2"], 54.3, delta=1.0)
+        self.assertIsNotNone(d["u500"])
 
     def test_missing_cape_uses_own_parcel(self):
         h = self._hourly()

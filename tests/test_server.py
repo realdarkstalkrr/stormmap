@@ -60,6 +60,12 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(s["country"], "UA")
         self.assertEqual(len(s["series"]), 72)
 
+    def test_point_forecast(self):
+        _, f = self.get_json("/api/forecast?model=best_match&lat=52.2&lon=21.0")
+        self.assertEqual(len(f["daily"]["temperature_2m_max"]), 7)
+        self.assertEqual(len(f["hourly"]["weather_code"]), len(f["hourly"]["time"]))
+        self.assertEqual(f["country"], "PL")
+
     def test_meteogram_and_ensemble(self):
         _, m = self.get_json("/api/meteogram?models=gfs_seamless,icon_seamless&lat=50&lon=20")
         self.assertEqual(len(m["series"]["gfs_seamless"]["cape"]), len(m["times"]))

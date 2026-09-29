@@ -19,6 +19,7 @@ from .sounding import analyze, profile_from_openmeteo
 log = logging.getLogger("stormmap.forecast")
 
 ROUND2 = {"stp", "scp", "ship", "ehi"}
+VECTOR_KEYS = ["u10", "v10", "u850", "v850", "u500", "v500", "u250", "v250"]
 THREAT_NAMES = ["None", "Thunder", "Marginal", "Slight", "Enhanced", "Moderate"]
 
 
@@ -138,7 +139,7 @@ def _load_grid(model, region):
     nt = len(times)
 
     # Derived parameters for every hour: hours[h][param] -> list over points
-    keys = list(PARAMS) + ["u850", "v850", "u500", "v500", "u10", "v10"]
+    keys = list(PARAMS) + VECTOR_KEYS
     hours = []
     for hi in range(nt):
         cols = {k: [] for k in keys}
@@ -416,6 +417,35 @@ def meteogram(models, lat, lon):
             series[m][v] = arr
     return {"lat": lat, "lon": lon, "times": h.get("time", []), "models": models, "series": series,
             "place": nearest_city(lat, lon)}
+
+
+def point_forecast(model, lat, lon):
+    """7-day point forecast (hourly + daily) for the Ventusky-style forecast panel."""
+    _check_model(model)
+    lat, lon = _check_latlon(lat, lon)
+
+    def load():
+        if config.DEMO_MODE:
+            return demo.forecast_response(lat, lon, config.FORECAST_HOURLY_VARS, config.FORECAST_DAILY_VARS)
+        params = {
+            "latitude": lat, "longitude": lon, "models": model,
+            "hourly": ",".join(config.FORECAST_HOURLY_VARS), "daily": ",".join(config.FORECAST_DAILY_VARS),
+            "forecast_days": 7, "timezone": "auto", "timeformat": "unixtime", "wind_speed_unit": "ms",
+        }
+        n_vars = len(config.FORECAST_HOURLY_VARS) + len(config.FORECAST_DAILY_VARS)
+        budget.acquire(RateBudget.weight(1, n_vars, days=7))
+        data = fetch_json(_om_url(config.OPEN_METEO_FORECAST, params), timeout=45)
+        if data.get("error"):
+            raise FetchError(data.get("reason", "Open-Meteo error"))
+        return data
+
+    data = cache.get_or_load(("fc", model, lat, lon), config.POINT_TTL, load)
+    return {
+        "model": model, "lat": lat, "lon": lon, "elevation": data.get("elevation"),
+        "timezone": data.get("timezone"), "utc_offset": data.get("utc_offset_seconds", 0),
+        "hourly": data.get("hourly", {}), "daily": data.get("daily", {}),
+        "place": nearest_city(lat, lon), "country": country_at(lat, lon),
+    }
 
 
 def _percentile(sorted_vals, q):

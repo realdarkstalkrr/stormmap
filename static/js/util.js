@@ -63,6 +63,7 @@ const loadingSet = new Map();
 SM.loading = function (key, text) {
   if (text) loadingSet.set(key, text); else loadingSet.delete(key);
   const box = SM.$('#loading');
+  SM.$('#progress').classList.toggle('on', loadingSet.size > 0);
   if (!loadingSet.size) { box.hidden = true; return; }
   box.hidden = false;
   SM.$('#loadingText').textContent = Array.from(loadingSet.values()).slice(-1)[0];

@@ -44,7 +44,10 @@
         <span class="pill" id="stTracker" title="Cell tracker"><i></i>Tracker</span>
       </div>
       <div class="clock"><span id="clockUtc">--:--</span><small>UTC</small></div>
+      <button class="icon-btn gear" id="settingsBtn" title="Units & settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+      <div id="settingsMenu" class="settings-menu" hidden></div>
     </div>
+    <div id="progress" class="progress"><i></i></div>
   </header>
 
   <!-- ===== Side rail + panels ===== -->
@@ -70,7 +73,15 @@
           <input type="range" class="op" data-layer="field" min="0" max="100" value="70" title="Opacity">
         </div>
         <div class="row">
-          <label class="toggle"><input type="checkbox" id="lyrContours"><span></span>500 hPa height contours</label>
+          <label class="toggle"><input type="checkbox" id="lyrParticles" checked><span></span>Wind animation</label>
+          <span class="mini-note" id="particleLevel">10 m</span>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrValues" checked><span></span>Values at cities</label>
+        </div>
+        <div class="row">
+          <span class="row-label">Isolines</span>
+          <select id="isoSel" class="mini"><option value="auto">Auto</option><option value="mslp">Isobars (MSLP)</option><option value="z500">500 hPa height</option><option value="none">None</option></select>
         </div>
         <div class="row">
           <label class="toggle"><input type="checkbox" id="lyrBarbs"><span></span>Wind barbs</label>
@@ -190,6 +201,9 @@
   <main id="mapWrap">
     <div id="map"></div>
     <div id="readout" class="readout" hidden></div>
+    <div id="layerBar" class="layer-bar"></div>
+    <div id="levelPop" class="level-pop" hidden></div>
+    <div id="modelBadge" class="model-badge"></div>
     <div id="legend" class="legend"></div>
     <div id="toast" class="toast" hidden></div>
     <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">Loading…</span></div>
@@ -223,7 +237,8 @@
         <div class="sub" id="dwSub"></div>
       </div>
       <div class="drawer-tabs" id="dwTabs">
-        <button data-tab="sounding" class="active">Sounding</button>
+        <button data-tab="forecast" class="active">Forecast</button>
+        <button data-tab="sounding">Sounding</button>
         <button data-tab="series">Parameters</button>
         <button data-tab="models">Models</button>
         <button data-tab="ensemble">Ensemble</button>
@@ -231,7 +246,13 @@
       <button class="icon-btn" id="dwClose" title="Close (Esc)">✕</button>
     </header>
     <div class="drawer-body">
-      <div class="tab active" data-tab="sounding">
+      <div class="tab active" data-tab="forecast">
+        <div id="fcNow" class="fc-now"></div>
+        <div id="fcDays" class="fc-days"></div>
+        <div id="fcHours" class="fc-hours"></div>
+        <div class="chart-box"><canvas id="fcChart"></canvas></div>
+      </div>
+      <div class="tab" data-tab="sounding">
         <div class="snd-grid">
           <div class="snd-plot">
             <canvas id="skewt"></canvas>
@@ -272,8 +293,11 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/chartjs/chart.umd.min.js"></script>
 <script src="js/util.js"></script>
+<script src="js/units.js"></script>
+<script src="js/icons.js"></script>
 <script src="js/scales.js"></script>
 <script src="js/field.js"></script>
+<script src="js/particles.js"></script>
 <script src="js/radar.js"></script>
 <script src="js/lightning.js"></script>
 <script src="js/tracker.js"></script>

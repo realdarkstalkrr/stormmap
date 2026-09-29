@@ -29,8 +29,11 @@
       .setView(SM.meta.center, 5);
     L.control.zoom({ position: 'topright' }).addTo(map);
     L.control.scale({ imperial: false, position: 'topright' }).addTo(map);
-    const panes = [['fieldPane', 350], ['satPane', 360], ['radarPane', 400], ['bordersPane', 420], ['labelsPane', 430], ['lightningPane', 450], ['cellPane', 500]];
+    const panes = [['fieldPane', 350], ['isoPane', 355], ['satPane', 360], ['radarPane', 400], ['particlePane', 410], ['bordersPane', 420], ['labelsPane', 430], ['valuesPane', 440], ['lightningPane', 450], ['cellPane', 500]];
     for (const [name, z] of panes) { map.createPane(name); map.getPane(name).style.zIndex = z; }
+    map.getPane('valuesPane').style.pointerEvents = 'none';
+    map.getPane('particlePane').style.pointerEvents = 'none';
+    map.getPane('isoPane').style.pointerEvents = 'none';
     map.getPane('labelsPane').style.pointerEvents = 'none';
     map.getPane('bordersPane').style.pointerEvents = 'none';
     setBase('dark');
@@ -76,13 +79,13 @@
       ms.appendChild(og);
     }
     rs.value = S.region; ms.value = S.model;
-    rs.addEventListener('change', () => { S.region = rs.value; fitRegion(); SM.fieldLayer.setData(null, null); reloadModel(); });
+    rs.addEventListener('change', () => { S.region = rs.value; fitRegion(); SM.fieldLayer.setData([]); gridCache.clear(); reloadModel(); });
     ms.addEventListener('change', () => {
       S.model = ms.value;
       const cov = SM.meta.models[S.model].coverage;
       if (cov && S.region !== 'ALL' && !cov.includes(S.region)) SM.toast(`${SM.meta.models[S.model].name} may not fully cover ${SM.meta.countries[S.region].name}.`);
       if (cov && S.region === 'ALL') SM.toast(`${SM.meta.models[S.model].name} is a limited-area model — parts of the region will be blank. Pick a covered country for best results.`);
-      reloadModel(); SM.emit('model');
+      gridCache.clear(); reloadModel(); SM.emit('model');
     });
   }
 
@@ -102,27 +105,90 @@
         if (!p) continue;
         const na = S.available && !S.available.includes(k);
         const c = SM.el('button', { class: 'chip' + (k === S.param ? ' active' : '') + (na ? ' na' : ''), title: p.desc || p.label, 'data-k': k }, SM.esc(p.label));
-        c.addEventListener('click', () => { S.param = k; buildParamList(); renderField(); writeHash(); });
+        c.addEventListener('click', () => selectParam(k));
         chips.appendChild(c);
       }
       g.appendChild(chips);
       box.appendChild(g);
     }
     const p = SM.meta.params[S.param];
-    SM.$('#paramDesc').textContent = p ? `${p.label}${p.unit ? ' (' + p.unit + ')' : ''} — ${p.desc}` : '';
+    const unit = SM.units.paramUnit(S.param);
+    SM.$('#paramDesc').textContent = p ? `${p.label}${unit ? ' (' + unit + ')' : ''} — ${p.desc}` : '';
     SM.$('#legend').innerHTML = SM.legendHTML(S.param);
+    buildLayerBar();
   }
+
+  function selectParam(k) {
+    S.param = k;
+    for (const q of SM.QUICK_LAYERS) if (q[3].some(l => l[1] === k)) S.quickLevel[q[0]] = k;
+    buildParamList();
+    renderField();
+    writeHash();
+  }
+
+  /* ======================= Ventusky-style layer bar ======================= */
+  S.quickLevel = {};
+  function buildLayerBar() {
+    const bar = SM.$('#layerBar');
+    bar.innerHTML = '';
+    SM.QUICK_LAYERS.forEach(([id, label, icon, levels], i) => {
+      if (id === 'cape') bar.appendChild(SM.el('div', { class: 'lb-sep' }));
+      const active = levels.some(l => l[1] === S.param);
+      const cur = levels.find(l => l[1] === (active ? S.param : S.quickLevel[id])) || levels[0];
+      const na = S.available && !levels.some(l => S.available.includes(l[1]));
+      const b = SM.el('button', { class: 'lb-btn' + (active ? ' active' : ''), title: label + (levels.length > 1 ? ' — click again for levels' : ''), 'data-id': id, style: na ? 'opacity:.35' : '' },
+        `${SM.glyph(icon)}<span>${SM.esc(label)}</span>${levels.length > 1 && active ? '<span class="lvl">▾</span>' : ''}`);
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        if (active && levels.length > 1) { openLevels(b, levels); return; }
+        closeLevels();
+        selectParam(cur[1]);
+      });
+      bar.appendChild(b);
+    });
+  }
+
+  function openLevels(btn, levels) {
+    const pop = SM.$('#levelPop');
+    pop.innerHTML = '';
+    for (const [lab, key] of levels) {
+      const b = SM.el('button', { class: key === S.param ? 'active' : '' }, SM.esc(lab));
+      b.addEventListener('click', e => { e.stopPropagation(); closeLevels(); selectParam(key); });
+      pop.appendChild(b);
+    }
+    const wrap = SM.$('#mapWrap').getBoundingClientRect(), r = btn.getBoundingClientRect();
+    pop.hidden = false;
+    if (window.innerWidth < 820) { pop.style.left = Math.max(8, r.left - wrap.left) + 'px'; pop.style.top = (r.top - wrap.top - pop.offsetHeight - 6) + 'px'; }
+    else { pop.style.left = (r.left - wrap.left - pop.offsetWidth - 8) + 'px'; pop.style.top = (r.top - wrap.top) + 'px'; }
+  }
+  function closeLevels() { SM.$('#levelPop').hidden = true; }
 
   /* ======================= Model grid ======================= */
   let gridReq = 0;
   S.grids = {};
 
+  const gridCache = new Map();
+  function fetchGrid(hour) {
+    const key = `${S.model}|${S.region}|${hour}`;
+    if (!gridCache.has(key)) {
+      const pr = SM.api('grid', { model: S.model, region: S.region, hour }).catch(e => { gridCache.delete(key); throw e; });
+      gridCache.set(key, pr);
+      if (gridCache.size > 30) gridCache.delete(gridCache.keys().next().value);
+    }
+    return gridCache.get(key);
+  }
+  function prefetch() {
+    if (!S.times) return;
+    for (const dh of [1, 2]) if (S.hour + dh < S.times.length) fetchGrid(S.hour + dh).catch(() => {});
+  }
+
   async function loadGrid() {
     const id = ++gridReq;
+    const cached = gridCache.has(`${S.model}|${S.region}|${S.hour}`);
     SM.status('stModel', 'busy', 'Loading model grid…');
-    SM.loading('grid', `Loading ${SM.meta.models[S.model].name}…`);
+    if (!cached) SM.loading('grid', `Loading ${SM.meta.models[S.model].name}…`);
     try {
-      const d = await SM.api('grid', { model: S.model, region: S.region, hour: S.hour });
+      const d = await fetchGrid(S.hour);
       if (id !== gridReq) return;
       S.gridData = d;
       S.times = d.times;
@@ -134,7 +200,10 @@
       renderField();
       updateTimeLabel();
       const age = Math.round((Date.now() / 1000 - d.fetched) / 60);
-      SM.status('stModel', 'ok', `${SM.meta.models[S.model].name}: ${d.idx.length} grid points, step ${d.grid.step}°, fetched ${age} min ago`);
+      const m = SM.meta.models[S.model];
+      SM.status('stModel', 'ok', `${m.name}: ${d.idx.length} grid points, step ${d.grid.step}°, fetched ${age} min ago`);
+      SM.$('#modelBadge').innerHTML = `<b>${SM.esc(m.name)}</b> · ${SM.esc(m.res)} · grid ${d.grid.step}° · updated ${age < 1 ? 'just now' : age + ' min ago'}`;
+      prefetch();
     } catch (e) {
       if (id !== gridReq) return;
       SM.status('stModel', 'err', e.message);
@@ -144,11 +213,31 @@
     }
   }
 
-  function renderField() {
+  function renderField(fade = true) {
     const g = S.grids[S.param];
-    if (SM.$('#lyrField').checked && g) SM.fieldLayer.setData(g, S.param);
-    else SM.fieldLayer.setData(null, null);
-    if (SM.$('#lyrContours').checked && S.grids.z500) SM.contourLayer.setData(S.grids.z500); else SM.contourLayer.setData(null);
+    const layers = [];
+    if (SM.$('#lyrField').checked && g) {
+      if (S.param === 'precip' && S.grids.cloud) layers.push({ grid: S.grids.cloud, key: 'cloud' });
+      layers.push({ grid: g, key: S.param });
+    }
+    SM.fieldLayer.setData(layers, fade);
+    // isolines
+    let iso = SM.$('#isoSel').value;
+    if (iso === 'auto') iso = S.param === 'mslp' ? 'mslp' : S.param === 'z500' ? 'z500' : 'none';
+    if (iso === 'mslp' && S.grids.mslp) {
+      SM.contourLayer.setData(S.grids.mslp, { interval: 4, bold: 20, extrema: true, format: v => SM.units.fmt('pressure', v) });
+    } else if (iso === 'z500' && S.grids.z500) {
+      SM.contourLayer.setData(S.grids.z500, { interval: 4, bold: 24, extrema: true, format: v => String(Math.round(v)) });
+    } else SM.contourLayer.setData(null);
+    // animated wind
+    if (SM.$('#lyrParticles').checked) {
+      let lvl = SM.PARTICLE_LEVEL[S.param] || '10';
+      if (!S.grids['u' + lvl]) lvl = S.grids.u500 && lvl === '250' ? '500' : '10';
+      SM.particleLayer.setField(S.grids['u' + lvl], S.grids['v' + lvl], lvl);
+      SM.$('#particleLevel').textContent = lvl === '10' ? '10 m' : lvl + ' hPa';
+    } else SM.particleLayer.setField(null, null);
+    // values at cities
+    SM.cityLayer.setData(SM.$('#lyrValues').checked && g ? g : null, S.param);
     if (SM.$('#lyrBarbs').checked && S.gridData) {
       const lvl = SM.$('#barbLevel').value, f = S.gridData.fields;
       const u = f['u' + lvl], v = f['v' + lvl];
@@ -204,9 +293,9 @@
   function updateTimeLabel() {
     if (!S.times) return;
     const t = S.times[S.hour];
-    SM.$('#tlTime').textContent = SM.utcLabel(t);
+    SM.$('#tlTime').textContent = SM.units.stamp(t);
     const lead = Math.round((t - Date.now() / 1000) / 3600);
-    SM.$('#tlLead').textContent = (lead >= 0 ? '+' : '') + lead + 'h · ' + SM.localHM(t) + ' local';
+    SM.$('#tlLead').textContent = (lead >= 0 ? '+' : '') + lead + 'h · ' + (SM.units.cfg.time === 'utc' ? SM.localHM(t) + ' local' : SM.utcHM(t) + 'Z');
     SM.$('#tlSlider').max = S.times.length - 1;
     SM.$('#tlSlider').value = S.hour;
   }
@@ -239,9 +328,8 @@
       ctx.globalAlpha = lv >= 1 ? 0.85 : 0.6;
       ctx.fillRect(i * w + 0.5, r.height - h, Math.max(1, w - 1), h);
       const dt = new Date(d.times[i] * 1000);
-      if (dt.getUTCHours() === 0) {
-        const s = SM.el('span', { style: `left:${(i / n) * 100}%` }, ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getUTCDay()] + ' ' + dt.getUTCDate());
-        days.appendChild(s);
+      if ((SM.units.cfg.time === 'utc' ? dt.getUTCHours() : dt.getHours()) === 0) {
+        days.appendChild(SM.el('span', { style: `left:${(i / n) * 100}%` }, SM.units.dayLabel(d.times[i])));
       }
     }
     ctx.globalAlpha = 1;
@@ -268,14 +356,18 @@
         const g = S.grids[S.param];
         const p = SM.meta.params[S.param];
         if (!g) { box.hidden = true; return; }
-        const v = g.sample(lat, lng);
+        const v = S.param === 'threat' ? g.category(lat, lng) : g.smooth(lat, lng);
         let txt = `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
         if (v === v) {
-          const shown = S.param === 'threat' ? SM.THREAT_NAMES[Math.max(0, Math.floor(v + 0.25))] : (Math.abs(v) >= 100 ? Math.round(v) : v.toFixed(Math.abs(v) < 10 ? 2 : 1));
-          txt += ` · ${SM.esc(p.label)} <b>${shown}</b> ${SM.esc(p.unit)}`;
-          const cape = S.grids.cape && S.grids.cape.sample(lat, lng), shr = S.grids.shr6 && S.grids.shr6.sample(lat, lng);
-          if (S.param !== 'cape' && cape === cape) txt += ` · CAPE ${Math.round(cape)}`;
-          if (S.param !== 'shr6' && shr === shr) txt += ` · Shear ${shr.toFixed(0)} m/s`;
+          const shown = S.param === 'threat' ? SM.THREAT_NAMES[Math.max(0, v)] : SM.units.fmtParam(S.param, v);
+          txt += ` · ${SM.esc(p.label)} <b>${shown}</b> ${SM.esc(SM.units.paramUnit(S.param))}`;
+          const at = k => S.grids[k] ? S.grids[k].smooth(lat, lng) : NaN;
+          const weather = ['t2', 'precip', 'cloud', 'wind10', 'gust', 'mslp', 'rh2', 'td2'].includes(S.param);
+          const extra = weather ? [['t2', 'Temp'], ['wind10', 'Wind'], ['mslp', 'Pressure']] : [['cape', 'CAPE'], ['shr6', 'Shear'], ['srh1', 'SRH1']];
+          for (const [k, lab] of extra) {
+            const x = at(k);
+            if (k !== S.param && x === x) txt += ` · ${lab} ${SM.units.fmtParam(k, x, true)}`;
+          }
         }
         box.innerHTML = txt;
         box.hidden = false;
@@ -336,8 +428,8 @@
 
   function renderOutlookLayer() {
     const d = S.outlook;
-    if (!SM.$('#lyrOutlook').checked || !d) { SM.outlookLayer.setData(null, null); return; }
-    SM.outlookLayer.setData(new SM.Grid(d.grid, d.idx, d.days[S.olDay].category), 'threat');
+    if (!SM.$('#lyrOutlook').checked || !d) { SM.outlookLayer.setData([]); return; }
+    SM.outlookLayer.setData([{ grid: new SM.Grid(d.grid, d.idx, d.days[S.olDay].category), key: 'threat' }]);
   }
 
   /* ======================= Warnings ======================= */
@@ -525,10 +617,21 @@
     }));
     SM.$('#panelClose').addEventListener('click', () => { SM.$('#panel').classList.add('collapsed'); setTimeout(() => SM.map.invalidateSize(), 220); });
 
-    SM.$('#lyrField').addEventListener('change', renderField);
-    SM.$('#lyrContours').addEventListener('change', renderField);
-    SM.$('#lyrBarbs').addEventListener('change', renderField);
-    SM.$('#barbLevel').addEventListener('change', renderField);
+    SM.$('#lyrField').addEventListener('change', () => renderField());
+    for (const id of ['#lyrParticles', '#lyrValues', '#isoSel']) SM.$(id).addEventListener('change', () => renderField(false));
+    SM.$('#settingsBtn').addEventListener('click', e => {
+      e.stopPropagation();
+      const m = SM.$('#settingsMenu');
+      m.hidden = !m.hidden;
+      if (!m.hidden) SM.units.buildMenu(m);
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#settingsMenu')) SM.$('#settingsMenu').hidden = true;
+      if (!e.target.closest('#levelPop')) closeLevels();
+    });
+    SM.on('units', () => { buildParamList(); renderField(false); updateTimeLabel(); drawSpark(); });
+    SM.$('#lyrBarbs').addEventListener('change', () => renderField(false));
+    SM.$('#barbLevel').addEventListener('change', () => renderField(false));
     SM.$('#lyrRadar').addEventListener('change', e => SM.radar.setEnabled(e.target.checked));
     SM.$('#lyrLightning').addEventListener('change', e => SM.lightning.setEnabled(e.target.checked));
     SM.$('#lyrOutlook').addEventListener('change', renderOutlookLayer);
@@ -597,19 +700,24 @@
       return;
     }
     try { SM.cities = await (await fetch('data/cities.json')).json(); } catch (e) { SM.cities = []; }
+    // label priority: each country's largest cities first (list is ordered by size within a country)
+    const rank = {};
+    SM.cityPriority = SM.cities.map(c => [c, (rank[c[1]] = (rank[c[1]] || 0) + 1)]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
     SM.$('#demoTag').hidden = !SM.meta.demo;
     const h = readHash();
     S.region = h.region && (h.region === 'ALL' || SM.meta.countries[h.region]) ? h.region : 'ALL';
     S.model = h.model && SM.meta.models[h.model] ? h.model : 'best_match';
-    S.param = h.param && SM.meta.params[h.param] ? h.param : 'threat';
+    S.param = h.param && SM.meta.params[h.param] ? h.param : 't2';
     S.hour = h.hour != null ? +h.hour : null;
 
     if (window.innerWidth < 820) SM.$('#panel').classList.add('collapsed');
     initMap();
-    SM.fieldLayer = new SM.FieldLayer({ opacity: 0.7 }).addTo(SM.map);
+    SM.fieldLayer = new SM.FieldLayer({ opacity: 0.75 }).addTo(SM.map);
     SM.outlookLayer = new SM.FieldLayer({ opacity: 0.55 }).addTo(SM.map);
     SM.contourLayer = new SM.ContourLayer().addTo(SM.map);
     SM.barbLayer = new SM.BarbLayer().addTo(SM.map);
+    SM.particleLayer = new SM.ParticleLayer().addTo(SM.map);
+    SM.cityLayer = new SM.CityValueLayer().addTo(SM.map);
     loadBorders();
     buildSelectors();
     buildParamList();

@@ -29,10 +29,10 @@ DEMO_MODE = os.environ.get("STORMMAP_DEMO", "0") == "1"
 
 # Grid fetch settings. Open-Meteo counts a request with >10 variables as several calls
 # (per location), and the free tier allows 600 calls/min, 5 000/h and 10 000/day.
-# The core variable set (20 vars = 2 calls per point) with ~280 points fits in one minute;
+# The core variable set (22 vars = 2.2 calls per point) with ~260 points fits in one minute;
 # with an API key the extended variable set and denser grids are enabled.
 GRID_EXTENDED = os.environ.get("STORMMAP_GRID_EXTENDED", "1" if OPEN_METEO_KEY else "0") == "1"
-GRID_MAX_POINTS = int(os.environ.get("STORMMAP_GRID_MAX_POINTS", "900" if OPEN_METEO_KEY else "280"))
+GRID_MAX_POINTS = int(os.environ.get("STORMMAP_GRID_MAX_POINTS", "900" if OPEN_METEO_KEY else "260"))
 GRID_CHUNK = 40
 GRID_TTL = int(os.environ.get("STORMMAP_GRID_TTL", str(3 * 3600)))
 POINT_TTL = 30 * 60
@@ -85,7 +85,7 @@ MODELS = {
 PRESSURE_LEVELS_SOUNDING = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400, 300, 250, 200, 150, 100]
 
 GRID_CORE_VARS = [
-    "temperature_2m", "dew_point_2m", "surface_pressure", "precipitation",
+    "temperature_2m", "dew_point_2m", "surface_pressure", "pressure_msl", "precipitation", "cloud_cover",
     "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
     "cape", "lifted_index", "convective_inhibition",
     "temperature_850hPa", "temperature_500hPa", "dew_point_850hPa",
@@ -95,7 +95,7 @@ GRID_CORE_VARS = [
     "geopotential_height_500hPa",
 ]
 GRID_EXTENDED_VARS = [
-    "freezing_level_height", "cloud_cover", "lightning_potential",
+    "freezing_level_height", "lightning_potential",
     "temperature_700hPa", "dew_point_700hPa", "geopotential_height_700hPa",
     "wind_speed_925hPa", "wind_direction_925hPa",
     "wind_speed_250hPa", "wind_direction_250hPa",
@@ -113,6 +113,17 @@ METEOGRAM_VARS = [
     "temperature_2m", "dew_point_2m", "precipitation", "wind_gusts_10m", "wind_speed_10m",
     "cape", "lifted_index", "cloud_cover", "pressure_msl",
     "wind_speed_500hPa", "wind_direction_500hPa", "wind_direction_10m",
+]
+
+FORECAST_HOURLY_VARS = [
+    "temperature_2m", "apparent_temperature", "dew_point_2m", "relative_humidity_2m",
+    "precipitation", "precipitation_probability", "weather_code", "cloud_cover",
+    "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m", "pressure_msl", "cape", "is_day",
+]
+FORECAST_DAILY_VARS = [
+    "weather_code", "temperature_2m_max", "temperature_2m_min", "precipitation_sum",
+    "precipitation_probability_max", "wind_gusts_10m_max", "wind_direction_10m_dominant",
+    "sunrise", "sunset", "uv_index_max",
 ]
 
 ENSEMBLE_MODELS = {

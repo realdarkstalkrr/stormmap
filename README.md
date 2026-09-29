@@ -16,6 +16,9 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 
 | Area | What you get |
 |---|---|
+| **Weather maps (Ventusky-style)** | Temperature, precipitation over cloud cover, clouds, wind, gusts, sea-level pressure, humidity and dew point. There is a quick layer bar with altitude levels (surface / 850 / 500 / 250 hPa), and animated wind-flow particles that follow the selected level. Fields are shaded with smooth bicubic interpolation and cross-fade between hours. Values are printed at cities, and isobars are drawn with labelled **H/L pressure centres**. |
+| **Point forecast** | Click anywhere for the current conditions (weather icon, feels-like, wind, gusts, humidity, pressure, dew point, CAPE, sunrise and sunset), a 7-day outlook with icons and storm flags, a 72-hour hourly strip with wind arrows and ⚡ convective hours, and a meteogram of temperature, dew point, gusts and precipitation. |
+| **Units** | °C/°F; km/h, m/s, kt, mph or Beaufort; mm/in; hPa, inHg or mmHg; m/ft; and local or UTC time. Your choice is saved in the browser. |
 | **Model maps** | Uses 15 NWP models through Open-Meteo: ECMWF IFS 0.25°, ECMWF AIFS (AI), GFS, ICON / ICON-EU / ICON-D2, ARPEGE Europe, GEM, UKMO 10 km, JMA, CMA GRAPES, DMI HARMONIE-AROME, MET Nordic, and best-match blending. Fields are shaded smoothly and clipped to the country borders. It also draws 500 hPa height contours and wind barbs (10 m / 850 / 500 hPa). |
 | **Parameters** | Storm-threat category, STP, SCP, SHIP, EHI, CAPE, LI, CIN, mid-level lapse rate, LCL, total totals / K-index, deep-layer and low-level shear, 0–1 and 0–3 km SRH (Bunkers right mover), dew point, θe 850, 2 m temperature, precipitation, gusts, 850/250 hPa wind, Z500, T850 and more. |
 | **Forecast timeline** | 72 h scrubber with a sparkline of the regional maximum threat and CAPE. Includes play/loop and keyboard control. |
@@ -37,7 +40,7 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 |---|---|---|
 | `STORMMAP_PORT` / `STORMMAP_HOST` | `8000` / `0.0.0.0` | Listen address |
 | `OPEN_METEO_API_KEY` | – | Uses the commercial Open-Meteo API. This removes the pacing, turns on the extended grid variables and allows grids of up to 900 points. |
-| `STORMMAP_GRID_MAX_POINTS` | `280` (`900` with a key) | Grid points per region |
+| `STORMMAP_GRID_MAX_POINTS` | `260` (`900` with a key) | Grid points per region |
 | `STORMMAP_GRID_EXTENDED` | `0` (`1` with a key) | Adds 925/700/250 hPa, lightning potential, freezing level and cloud cover |
 | `STORMMAP_GRID_TTL` | `10800` | Seconds a model grid is cached (in memory and in `.cache/`) |
 | `STORMMAP_WARM` | `1` | Pre-fetches the default grid at startup |
@@ -47,7 +50,7 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 
 Open-Meteo's free tier allows 600 calls/min, 5 000/h and 10 000/day. A request with more than 10 variables counts as several calls for each location.
 
-- The model grid uses a 20-variable core set, so each point costs 2 calls. Each region is capped at about 280 points, which is roughly 450–550 calls and fits inside one minute. A built-in pacer keeps the server under the limits.
+- The model grid uses a 22-variable core set, so each point costs 2.2 calls. Each region is capped at about 260 points, which is roughly 480–580 calls and fits inside one minute. A built-in pacer keeps the server under the limits. The browser also caches hours it has already loaded and prefetches the next ones, so the timeline plays back smoothly.
 - Grids are cached for 3 h on disk, so restarting the server doesn't spend the budget again.
 - "All 10 countries" therefore uses a coarse grid of about 2.3°. Select a single country to get a fine grid (0.17–0.66°).
 
@@ -63,10 +66,14 @@ stormmap/thermo.py     thermodynamic primitives (Bolton, RK4 pseudo-adiabats…)
 stormmap/sources.py    RainViewer radar proxy, MeteoAlarm parser, geocoding
 stormmap/geo.py        country polygons, grid masks, nearest town
 stormmap/demo.py       synthetic trough/warm-sector weather, radar tiles, strikes
-static/                index.html, css, js (Leaflet canvas layers, tracker, Skew-T…)
+static/js/field.js     bicubic field rendering, isolines + H/L centres, city values, barbs
+static/js/particles.js animated wind-flow particles
+static/js/units.js     unit preferences and conversions
+static/js/icons.js     SVG weather icons (WMO codes) and layer glyphs
+static/                index.html, css, other js (radar, lightning, tracker, Skew-T, drawer…)
 ```
 
-API endpoints: `/api/meta`, `/api/grid`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
+API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
 
 ## Tests
 

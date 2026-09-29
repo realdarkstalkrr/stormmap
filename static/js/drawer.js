@@ -2,9 +2,9 @@
 'use strict';
 
 (function () {
-  const D = SM.drawer = { lat: null, lon: null, data: null, parcel: 'ml', tab: 'sounding', charts: {}, mgVar: 'cape', ensVar: 'cape', ensModel: 'icon_seamless', mgModels: null };
+  const D = SM.drawer = { lat: null, lon: null, data: null, parcel: 'ml', tab: 'forecast', charts: {}, mgVar: 'cape', ensVar: 'cape', ensModel: 'icon_seamless', mgModels: null };
   let marker = null;
-  const req = { snd: 0, mg: 0, ens: 0 };
+  const req = { snd: 0, mg: 0, ens: 0, fc: 0 };
 
   const MODEL_COLORS = ['#22d3ee', '#f43f5e', '#fbbf24', '#34d399', '#a78bfa', '#fb923c', '#e879f9', '#60a5fa', '#f8fafc', '#84cc16'];
 
@@ -238,6 +238,128 @@
     });
   }
 
+  /* ---------------- Point forecast (Ventusky-style) ---------------- */
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function locDate(t) {
+    const off = SM.units.cfg.time === 'utc' ? 0 : (D.fc ? D.fc.utc_offset : 0);
+    return new Date((t + off) * 1000); // read with UTC getters
+  }
+  const locHM = t => { const d = locDate(t); return SM.pad(d.getUTCHours()) + ':00'; };
+  const arrow = dir => `<i style="transform:rotate(${(dir + 180) % 360}deg)">↑</i>`;
+
+  async function loadForecast() {
+    if (D.lat == null) return;
+    const id = ++req.fc;
+    SM.loading('fc', 'Loading point forecast…');
+    try {
+      let r;
+      try { r = await SM.api('forecast', { model: SM.state.model, lat: D.lat, lon: D.lon }); }
+      catch (e) { r = await SM.api('forecast', { model: 'best_match', lat: D.lat, lon: D.lon }); }
+      if (id !== req.fc) return;
+      D.fc = r;
+      if (D.tab === 'forecast') drawForecast();
+    } catch (e) {
+      SM.$('#fcNow').innerHTML = `<p class="hint">Forecast unavailable: ${SM.esc(e.message)}</p>`;
+    } finally { SM.loading('fc'); }
+  }
+
+  function drawForecast() {
+    const f = D.fc;
+    if (!f) return;
+    const h = f.hourly, d = f.daily, U = SM.units;
+    const now = Date.now() / 1000;
+    let i0 = h.time.findIndex(t => t > now - 1800);
+    if (i0 < 0) i0 = 0;
+    const g = (k, i) => (h[k] ? h[k][i] : null);
+    const code = g('weather_code', i0), day = g('is_day', i0) !== 0;
+    const sr = d.sunrise && d.sunrise[0], ss = d.sunset && d.sunset[0];
+    const fmtSun = t => (typeof t === 'number' ? locHM(t).replace(':00', ':' + SM.pad(locDate(t).getUTCMinutes())) : (t ? String(t).slice(11, 16) : '—'));
+    SM.$('#fcNow').innerHTML = `
+      <div class="ico">${SM.weatherIcon(code, day)}</div>
+      <div>
+        <div class="big">${U.fmt('temp', g('temperature_2m', i0))}<small>${U.label('temp')}</small></div>
+        <div class="desc">${SM.esc(SM.weatherText(code))}</div>
+        <div class="feels">Feels like ${U.fmt('temp', g('apparent_temperature', i0), true)} · ${SM.esc(f.timezone || '')}</div>
+      </div>
+      <div class="facts">
+        <div>Wind<b>${arrow(g('wind_direction_10m', i0) || 0)} ${U.fmt('wind', g('wind_speed_10m', i0), true)}</b></div>
+        <div>Gusts<b>${U.fmt('wind', g('wind_gusts_10m', i0), true)}</b></div>
+        <div>Humidity<b>${SM.fmt(g('relative_humidity_2m', i0))} %</b></div>
+        <div>Pressure<b>${U.fmt('pressure', g('pressure_msl', i0), true)}</b></div>
+        <div>Dew point<b>${U.fmt('temp', g('dew_point_2m', i0), true)}</b></div>
+        <div>CAPE<b>${SM.fmt(g('cape', i0))} J/kg</b></div>
+        <div>Rain chance<b>${g('precipitation_probability', i0) == null ? '—' : g('precipitation_probability', i0) + ' %'}</b></div>
+        <div>Sunrise<b>${fmtSun(sr)}</b></div>
+        <div>Sunset<b>${fmtSun(ss)}</b></div>
+      </div>`;
+
+    // 7-day cards
+    const days = SM.$('#fcDays');
+    days.innerHTML = '';
+    (d.time || []).forEach((t, k) => {
+      const dt = locDate(typeof t === 'number' ? t : Date.parse(t) / 1000);
+      const wc = d.weather_code[k];
+      const el = SM.el('div', { class: 'fc-day' + (k === D.fcDay ? ' on' : '') }, `
+        <div class="d">${k === 0 ? 'Today' : DAYS[dt.getUTCDay()] + ' ' + dt.getUTCDate()}</div>
+        <div class="ico">${SM.weatherIcon(wc, true)}</div>
+        <div class="t">${U.fmt('temp', d.temperature_2m_max[k])}° <span>${U.fmt('temp', d.temperature_2m_min[k])}°</span></div>
+        <div class="p">${d.precipitation_sum[k] ? U.fmt('precip', d.precipitation_sum[k]) + (U.cfg.precip === 'in' ? ' in' : ' mm') : '&nbsp;'}${d.precipitation_probability_max && d.precipitation_probability_max[k] != null ? ' · ' + d.precipitation_probability_max[k] + '%' : ''}</div>
+        <div class="g">${d.wind_gusts_10m_max ? U.fmt('wind', d.wind_gusts_10m_max[k], true) : ''}</div>
+        ${wc >= 95 ? '<div class="ts">⚡ STORMS</div>' : ''}`);
+      el.addEventListener('click', () => {
+        D.fcDay = k;
+        SM.$$('.fc-day', days).forEach((x, j) => x.classList.toggle('on', j === k));
+        const target = SM.$(`.fc-h[data-day="${k}"]`);
+        if (target) target.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+      });
+      days.appendChild(el);
+    });
+
+    // hourly strip: next 72 h
+    const strip = SM.$('#fcHours');
+    strip.innerHTML = '';
+    const dayOf = t => { const x = locDate(t); return Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate()); };
+    const day0 = dayOf(h.time[i0]);
+    for (let i = i0; i < Math.min(h.time.length, i0 + 72); i++) {
+      const t = h.time[i];
+      const dayIdx = Math.round((dayOf(t) - day0) / 86400000);
+      const isMidnight = locDate(t).getUTCHours() === 0;
+      const pr = g('precipitation', i), cape = g('cape', i);
+      const storm = (g('weather_code', i) >= 95) || (cape >= 800 && pr >= 0.5);
+      strip.appendChild(SM.el('div', { class: 'fc-h' + (g('is_day', i) === 0 ? ' night' : '') + (isMidnight ? ' day0' : ''), 'data-day': isMidnight || i === i0 ? dayIdx : '' }, `
+        <div class="hh">${isMidnight ? DAYS[locDate(t).getUTCDay()] : locHM(t)}</div>
+        <div class="ico">${SM.weatherIcon(g('weather_code', i), g('is_day', i) !== 0)}</div>
+        <div class="tt">${U.fmt('temp', g('temperature_2m', i))}°</div>
+        <div class="pp">${pr >= 0.1 ? U.fmt('precip', pr) : ''}</div>
+        <div class="ww">${arrow(g('wind_direction_10m', i) || 0)}${U.fmt('wind', g('wind_speed_10m', i))}</div>
+        <div class="cc">${storm ? '⚡' + (cape >= 100 ? Math.round(cape) : '') : ''}</div>`));
+    }
+
+    // meteogram
+    const idx = [];
+    for (let i = i0; i < Math.min(h.time.length, i0 + 120); i++) idx.push(i);
+    const labels = idx.map(i => { const x = locDate(h.time[i]); return x.getUTCHours() === 0 ? DAYS[x.getUTCDay()] + ' ' + x.getUTCDate() : SM.pad(x.getUTCHours()) + 'h'; });
+    chart('fcChart', {
+      type: 'bar',
+      data: { labels, datasets: [
+        { type: 'line', label: `Temperature ${U.label('temp')}`, data: idx.map(i => U.conv('temp', g('temperature_2m', i))), borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,.08)', fill: true, pointRadius: 0, tension: .35, yAxisID: 'y', borderWidth: 2.2 },
+        { type: 'line', label: `Dew point ${U.label('temp')}`, data: idx.map(i => U.conv('temp', g('dew_point_2m', i))), borderColor: '#34d399', pointRadius: 0, tension: .35, yAxisID: 'y', borderDash: [4, 3], borderWidth: 1.5 },
+        { type: 'line', label: `Gusts ${U.label('wind')}`, data: idx.map(i => U.conv('wind', g('wind_gusts_10m', i))), borderColor: 'rgba(203,213,225,.7)', pointRadius: 0, tension: .35, yAxisID: 'y2', borderWidth: 1.2 },
+        { type: 'bar', label: `Precipitation ${U.cfg.precip === 'in' ? 'in' : 'mm'}`, data: idx.map(i => U.conv('precip', g('precipitation', i))), backgroundColor: 'rgba(94,168,255,.75)', yAxisID: 'y1', barPercentage: 1, categoryPercentage: .9 },
+      ] },
+      options: {
+        interaction: { mode: 'index', intersect: false },
+        plugins: { title: { display: true, text: `${SM.esc(f.place ? f.place.label : '')} · ${SM.meta.models[f.model] ? SM.meta.models[f.model].name : f.model}` } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 16, autoSkip: true } },
+          y: { position: 'left', title: { display: true, text: U.label('temp') } },
+          y1: { position: 'right', min: 0, suggestedMax: U.conv('precip', 4), grid: { drawOnChartArea: false }, title: { display: true, text: 'precip' } },
+          y2: { display: false, min: 0 },
+        },
+      },
+    });
+  }
+
   D.open = async function (lat, lon, opts = {}) {
     D.lat = +lat.toFixed(3); D.lon = +lon.toFixed(3);
     SM.$('#drawer').hidden = false;
@@ -246,6 +368,9 @@
     SM.$('#dwSub').textContent = `${D.lat.toFixed(2)}°N ${D.lon.toFixed(2)}°E`;
     if (marker) marker.setLatLng([D.lat, D.lon]); else marker = L.circleMarker([D.lat, D.lon], { radius: 7, color: '#22d3ee', weight: 2, fillOpacity: 0.15, pane: 'cellPane' }).addTo(SM.map);
     if (opts.hour != null) SM.state.hour = opts.hour;
+    D.fc = null; D.fcDay = 0;
+    if (opts.tab) selectTab(opts.tab);
+    loadForecast();
     await D.loadSounding();
     if (D.tab === 'models') loadModels();
     if (D.tab === 'ensemble') loadEnsemble();
@@ -278,15 +403,7 @@
 
   D.init = function () {
     SM.$('#dwClose').addEventListener('click', D.close);
-    SM.$$('#dwTabs button').forEach(b => b.addEventListener('click', () => {
-      D.tab = b.dataset.tab;
-      SM.$$('#dwTabs button').forEach(x => x.classList.toggle('active', x === b));
-      SM.$$('#drawer .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === D.tab));
-      if (D.tab === 'sounding') drawSounding();
-      if (D.tab === 'series') drawSeries();
-      if (D.tab === 'models') { mgPicks(); if (!D.mg || D.mg.lat !== D.lat || D.mg.lon !== D.lon) loadModels(); else drawModels(); }
-      if (D.tab === 'ensemble') { ensButtons(); if (!D.ens || D.ens.lat !== D.lat || D.ens.lon !== D.lon) loadEnsemble(); else drawEnsemble(); }
-    }));
+    SM.$$('#dwTabs button').forEach(b => b.addEventListener('click', () => selectTab(b.dataset.tab)));
     SM.$$('#parcelSeg button').forEach(b => b.addEventListener('click', () => {
       D.parcel = b.dataset.parcel;
       SM.$$('#parcelSeg button').forEach(x => x.classList.toggle('active', x === b));
@@ -304,6 +421,18 @@
     }));
     window.addEventListener('resize', SM.debounce(() => { if (D.isOpen() && D.tab === 'sounding') drawSounding(); }, 200));
     SM.on('hour', () => { if (D.isOpen()) D.loadSounding(); });
-    SM.on('model', () => { if (D.isOpen()) D.loadSounding(); });
+    SM.on('model', () => { if (D.isOpen()) { D.loadSounding(); loadForecast(); } });
+    SM.on('units', () => { if (D.isOpen() && D.tab === 'forecast') drawForecast(); });
   };
+
+  function selectTab(tab) {
+    D.tab = tab;
+    SM.$$('#dwTabs button').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
+    SM.$$('#drawer .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === D.tab));
+    if (D.tab === 'forecast') { if (D.fc) drawForecast(); else loadForecast(); }
+    if (D.tab === 'sounding') drawSounding();
+    if (D.tab === 'series') drawSeries();
+    if (D.tab === 'models') { mgPicks(); if (!D.mg || D.mg.lat !== D.lat || D.mg.lon !== D.lon) loadModels(); else drawModels(); }
+    if (D.tab === 'ensemble') { ensButtons(); if (!D.ens || D.ens.lat !== D.lat || D.ens.lon !== D.lon) loadEnsemble(); else drawEnsemble(); }
+  }
 })();

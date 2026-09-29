@@ -26,7 +26,7 @@ def _meta():
         "countries": {k: {"name": v["name"], "bounds": v["bounds"], "warnings": bool(v["meteoalarm"])} for k, v in config.COUNTRIES.items()},
         "region_bounds": config.REGION_BOUNDS, "center": config.MAP_CENTER,
         "models": config.MODELS, "ensembles": config.ENSEMBLE_MODELS,
-        "params": {k: {"label": v[0], "unit": v[1], "desc": v[2]} for k, v in PARAMS.items()},
+        "params": {k: {"label": v[0], "unit": v[1], "desc": v[2], "kind": v[3]} for k, v in PARAMS.items()},
         "server_time": int(time.time()),
         "grid_extended": config.GRID_EXTENDED, "api_key": bool(config.OPEN_METEO_KEY),
         "budget": forecast.budget.usage(),
@@ -59,6 +59,8 @@ def route_api(path, qs):
         return 200, "json", forecast.outlook(_q(qs, "model", "best_match"), _q(qs, "region", "ALL")), 60
     if path == "/api/sounding":
         return 200, "json", forecast.sounding(_q(qs, "model", "best_match"), _float(qs, "lat"), _float(qs, "lon"), int(_q(qs, "hour", "0"))), 60
+    if path == "/api/forecast":
+        return 200, "json", forecast.point_forecast(_q(qs, "model", "best_match"), _float(qs, "lat"), _float(qs, "lon")), 300
     if path == "/api/meteogram":
         models = [m for m in (_q(qs, "models", "best_match") or "").split(",") if m]
         return 200, "json", forecast.meteogram(models, _float(qs, "lat"), _float(qs, "lon")), 300

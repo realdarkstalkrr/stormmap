@@ -11,6 +11,8 @@ import struct
 import time
 import zlib
 
+from .thermo import sat_vapor_pressure
+
 HOUR = 3600
 
 
@@ -48,6 +50,10 @@ def _field(lat, lon, t_unix):
     w500 = wind(18 + 16 * jet, 225)
     w250 = wind(30 + 25 * jet, 235)
 
+    low = 17 * math.exp(-(((lat - 57) / 6) ** 2 + ((lon - front + 1) / 9) ** 2))
+    high = 11 * math.exp(-(((lat - 46) / 7) ** 2 + ((lon - front + 17) / 10) ** 2))
+    mslp = 1013 - low + high - 3 * warm + 2 * math.sin(lon * 0.15 + lat * 0.1)
+
     t850 = t2 - 11 - 2 * diurnal
     t700 = t850 - 13
     t500 = -9 - 0.45 * (lat - 45) - 5 * (1 - warm) - 2 * jet
@@ -60,7 +66,7 @@ def _field(lat, lon, t_unix):
     return {
         "temperature_2m": round(t2, 1), "dew_point_2m": round(td2, 1),
         "surface_pressure": round(1008 - 6 * warm - (lat - 45) * 0.1, 1),
-        "pressure_msl": round(1010 - 6 * warm, 1),
+        "pressure_msl": round(mslp, 1),
         "precipitation": round(precip, 1), "rain": round(precip, 1), "showers": round(precip * 0.7, 1),
         "snowfall": 0.0, "precipitation_probability": min(100, round(precip * 25)),
         "wind_speed_10m": round(w10[0], 1), "wind_direction_10m": round(w10[1]),
@@ -165,6 +171,54 @@ def meteogram_response(lat, lon, models, variables):
             key = v if len(models) == 1 else f"{v}_{m}"
             hourly[key] = [r.get(v) for r in rows]
     return {"hourly": hourly}
+
+
+def _weather_code(f):
+    if f["precipitation"] >= 3 and f["cape"] > 500:
+        return 95
+    if f["precipitation"] >= 2:
+        return 63
+    if f["precipitation"] >= 0.3:
+        return 61
+    if f["cloud_cover"] >= 85:
+        return 3
+    if f["cloud_cover"] >= 50:
+        return 2
+    return 1 if f["cloud_cover"] >= 20 else 0
+
+
+def forecast_response(lat, lon, hourly_vars, daily_vars):
+    times = _times(7)
+    rows = [_field(lat, lon, t) for t in times]
+    hourly = {"time": times}
+    for v in hourly_vars:
+        if v == "weather_code":
+            hourly[v] = [_weather_code(r) for r in rows]
+        elif v == "apparent_temperature":
+            hourly[v] = [round(r["temperature_2m"] - 0.4 * r["wind_speed_10m"] + 0.1 * (r["dew_point_2m"] - 10), 1) for r in rows]
+        elif v == "relative_humidity_2m":
+            hourly[v] = [round(min(100, 100 * sat_vapor_pressure(r["dew_point_2m"]) / sat_vapor_pressure(r["temperature_2m"]))) for r in rows]
+        elif v == "is_day":
+            hourly[v] = [1 if 5 <= ((t % 86400) / 3600 + lon / 15) % 24 < 19 else 0 for t in times]
+        else:
+            hourly[v] = [r.get(v) for r in rows]
+    daily = {"time": [times[i] for i in range(0, len(times), 24)]}
+    for d in range(7):
+        sl = rows[d * 24:(d + 1) * 24]
+        codes = [_weather_code(r) for r in sl]
+        vals = {
+            "weather_code": max(codes), "temperature_2m_max": max(r["temperature_2m"] for r in sl),
+            "temperature_2m_min": min(r["temperature_2m"] for r in sl),
+            "precipitation_sum": round(sum(r["precipitation"] for r in sl), 1),
+            "precipitation_probability_max": max(r["precipitation_probability"] for r in sl),
+            "wind_gusts_10m_max": max(r["wind_gusts_10m"] for r in sl), "wind_direction_10m_dominant": 200,
+            "sunrise": daily["time"][d] + int((5.5 - lon / 15) * 3600), "sunset": daily["time"][d] + int((18.5 - lon / 15) * 3600),
+            "uv_index_max": 6.5,
+        }
+        for v in daily_vars:
+            daily.setdefault(v, []).append(vals.get(v))
+    return {"latitude": lat, "longitude": lon, "elevation": 150.0, "timezone": "GMT", "utc_offset_seconds": 0,
+            "hourly": hourly, "daily": daily}
 
 
 def ensemble_response(lat, lon, variables):
