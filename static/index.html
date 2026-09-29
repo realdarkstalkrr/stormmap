@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>StormMap</title>
+  <meta name="description" content="Convective weather analysis and live storm tracking for Eastern & Central Europe">
+  <meta name="theme-color" content="#050608">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23050608'/%3E%3Cpath d='M18 3 7 18h7l-2 11 11-16h-7z' fill='%2322d3ee'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <!-- ===== Top bar ===== -->
+  <header id="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" class="brand-bolt" aria-hidden="true"><path d="M13.5 2 4 14h6l-1.5 8L18 10h-6z"/></svg>
+      <span class="brand-name">STORM<b>MAP</b></span>
+      <span class="brand-tag" id="demoTag" hidden>DEMO</span>
+    </div>
+    <div class="top-controls">
+      <label class="sel">
+        <span>Region</span>
+        <select id="regionSel"></select>
+      </label>
+      <label class="sel">
+        <span>Model</span>
+        <select id="modelSel"></select>
+      </label>
+      <div class="search">
+        <input id="searchInput" type="search" placeholder="Search city…" autocomplete="off" aria-label="Search city">
+        <div id="searchResults" class="search-results" hidden></div>
+      </div>
+    </div>
+    <div class="top-right">
+      <div class="status" id="statusBar">
+        <span class="pill" id="stModel" title="Model data"><i></i>Model</span>
+        <span class="pill" id="stRadar" title="Radar mosaic"><i></i>Radar</span>
+        <span class="pill" id="stLightning" title="Lightning feed"><i></i>Lightning</span>
+        <span class="pill" id="stTracker" title="Cell tracker"><i></i>Tracker</span>
+      </div>
+      <div class="clock"><span id="clockUtc">--:--</span><small>UTC</small></div>
+    </div>
+  </header>
+
+  <!-- ===== Side rail + panels ===== -->
+  <nav id="rail">
+    <button class="rail-btn active" data-panel="layers" title="Layers & parameters"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg><span>Layers</span></button>
+    <button class="rail-btn" data-panel="storms" title="Live storm tracker"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity=".6"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>Tracker</span><em class="badge" id="cellBadge" hidden>0</em></button>
+    <button class="rail-btn" data-panel="outlook" title="Convective outlook & chase targets"><svg viewBox="0 0 24 24"><path d="M3 17c3-6 6-9 9-9s6 3 9 9"/><path d="M12 8V3"/><circle cx="12" cy="17" r="2"/></svg><span>Outlook</span></button>
+    <button class="rail-btn" data-panel="warnings" title="Official warnings"><svg viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg><span>Warnings</span><em class="badge warn" id="warnBadge" hidden>0</em></button>
+    <button class="rail-btn" data-panel="chase" title="Chase mode"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z"/><circle cx="12" cy="9" r="2.5"/></svg><span>Chase</span></button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" data-panel="about" title="About & data sources"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg><span>About</span></button>
+  </nav>
+
+  <aside id="panel">
+    <button id="panelClose" class="icon-btn" title="Collapse panel">‹</button>
+
+    <!-- Layers -->
+    <section class="pane active" data-pane="layers">
+      <h2>Layers</h2>
+      <div class="group">
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrField" checked><span></span>Model field</label>
+          <input type="range" class="op" data-layer="field" min="0" max="100" value="70" title="Opacity">
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrContours"><span></span>500 hPa height contours</label>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrBarbs"><span></span>Wind barbs</label>
+          <select id="barbLevel" class="mini"><option value="500">500 hPa</option><option value="850">850 hPa</option><option value="10">10 m</option></select>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrRadar" checked><span></span>Radar mosaic</label>
+          <input type="range" class="op" data-layer="radar" min="0" max="100" value="85" title="Opacity">
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrLightning" checked><span></span>Lightning (live)</label>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrCells" checked><span></span>Storm cells & tracks</label>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrSat"><span></span>Satellite</label>
+          <select id="satLayer" class="mini">
+            <option value="msg_fes:ir108">IR 10.8 µm</option>
+            <option value="msg_fes:rgb_convection">RGB Convection</option>
+            <option value="msg_fes:rgb_airmass">RGB Airmass</option>
+            <option value="msg_fes:wv062">Water vapour 6.2</option>
+          </select>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrOutlook"><span></span>Outlook categories</label>
+        </div>
+      </div>
+
+      <h3>Base map</h3>
+      <div class="seg" id="baseSeg">
+        <button data-base="dark" class="active">Dark</button>
+        <button data-base="terrain">Terrain</button>
+        <button data-base="roads">Roads</button>
+        <button data-base="sat">Imagery</button>
+      </div>
+
+      <h3>Model parameter</h3>
+      <div id="paramList" class="param-list"></div>
+      <p class="hint" id="paramDesc"></p>
+    </section>
+
+    <!-- Storm tracker -->
+    <section class="pane" data-pane="storms">
+      <h2>Live storm tracker</h2>
+      <p class="hint">Cells are detected from the radar mosaic (≥ <b id="thrLabel">40</b> dBZ), tracked across frames and extrapolated. Environment is sampled from the selected model.</p>
+      <div class="tracker-ctl">
+        <label>Threshold <select id="trkThreshold" class="mini"><option>35</option><option selected>40</option><option>45</option><option>50</option></select> dBZ</label>
+        <label>Frames <select id="trkFrames" class="mini"><option>4</option><option selected>6</option><option>9</option></select></label>
+        <button class="btn" id="trkRun">Rescan</button>
+      </div>
+      <div class="tracker-sum" id="trkSummary">Waiting for radar…</div>
+      <div id="cellList" class="cell-list"></div>
+    </section>
+
+    <!-- Outlook -->
+    <section class="pane" data-pane="outlook">
+      <h2>Convective outlook</h2>
+      <p class="hint">Automated guidance from <b id="olModel">—</b>. Categories blend CAPE, shear, SRH and composite indices (STP/SCP/SHIP).</p>
+      <div class="seg" id="olDays"></div>
+      <div id="olLegend" class="ol-legend"></div>
+      <h3>Countries</h3>
+      <div id="olCountries" class="ol-countries"></div>
+      <h3>Chase targets</h3>
+      <div id="olTargets" class="targets"></div>
+    </section>
+
+    <!-- Warnings -->
+    <section class="pane" data-pane="warnings">
+      <h2>Official warnings</h2>
+      <p class="hint">MeteoAlarm feeds of the national weather services.</p>
+      <div class="seg small" id="warnFilter">
+        <button data-f="storm" class="active">Convective</button>
+        <button data-f="all">All types</button>
+      </div>
+      <div id="warnList" class="warn-list"></div>
+      <div id="warnStatus" class="warn-status"></div>
+    </section>
+
+    <!-- Chase -->
+    <section class="pane" data-pane="chase">
+      <h2>Chase mode</h2>
+      <div class="chase-ctl">
+        <button class="btn primary" id="gpsBtn">Track my GPS</button>
+        <button class="btn" id="pickBtn">Set position on map</button>
+      </div>
+      <label class="inline">Road speed <input type="number" id="chaseSpeed" value="80" min="20" max="150" step="5"> km/h</label>
+      <div id="chaseInfo" class="chase-info"><p class="hint">Set your position to get distances, ETAs and intercept solutions for tracked cells.</p></div>
+    </section>
+
+    <!-- About -->
+    <section class="pane" data-pane="about">
+      <h2>About StormMap</h2>
+      <p>Storm analysis and tracking for <b>Ukraine, Russia (European), Türkiye, Romania, Bulgaria, Slovakia, Poland, Finland, Germany and Belarus</b>.</p>
+      <h3>Data sources</h3>
+      <ul class="sources">
+        <li><b>NWP models</b> — ECMWF IFS/AIFS, NOAA GFS, DWD ICON/ICON-EU/ICON-D2, Météo-France ARPEGE, CMC GEM, UKMO, JMA, CMA, DMI HARMONIE, MET Nordic via <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0).</li>
+        <li><b>Ensembles</b> — ICON-EPS, GEFS, ECMWF ENS, GEPS via Open-Meteo.</li>
+        <li><b>Radar</b> — <a href="https://www.rainviewer.com" target="_blank" rel="noopener">RainViewer</a> composite.</li>
+        <li><b>Lightning</b> — <a href="https://www.blitzortung.org" target="_blank" rel="noopener">Blitzortung.org</a> community network (private, non-commercial use).</li>
+        <li><b>Satellite</b> — <a href="https://view.eumetsat.int" target="_blank" rel="noopener">EUMETSAT EUMETView</a> Meteosat.</li>
+        <li><b>Warnings</b> — <a href="https://meteoalarm.org" target="_blank" rel="noopener">MeteoAlarm</a>.</li>
+        <li><b>Base maps</b> — © OpenStreetMap contributors, © CARTO, Esri.</li>
+      </ul>
+      <h3>Shortcuts</h3>
+      <ul class="keys">
+        <li><kbd>Space</kbd> play / pause forecast</li>
+        <li><kbd>←</kbd> <kbd>→</kbd> forecast hour</li>
+        <li><kbd>R</kbd> radar loop</li>
+        <li><kbd>Esc</kbd> close analysis</li>
+      </ul>
+      <p class="hint">Automated guidance only — always cross-check official forecasts and warnings. Stay safe on the road.</p>
+    </section>
+  </aside>
+
+  <!-- ===== Map ===== -->
+  <main id="mapWrap">
+    <div id="map"></div>
+    <div id="readout" class="readout" hidden></div>
+    <div id="legend" class="legend"></div>
+    <div id="toast" class="toast" hidden></div>
+    <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">Loading…</span></div>
+
+    <!-- Radar controls -->
+    <div id="radarBar" class="radar-bar">
+      <button class="icon-btn" id="radarPlay" title="Play radar loop (R)">▶</button>
+      <input type="range" id="radarSlider" min="0" max="0" value="0">
+      <span id="radarTime" class="mono">--:--</span>
+      <span class="tag">RADAR</span>
+    </div>
+
+    <!-- Forecast timeline -->
+    <div id="timeline">
+      <button class="icon-btn" id="tlPlay" title="Play forecast (Space)">▶</button>
+      <button class="icon-btn" id="tlNow" title="Jump to now">NOW</button>
+      <div class="tl-track">
+        <canvas id="tlSpark"></canvas>
+        <input type="range" id="tlSlider" min="0" max="71" value="0">
+        <div id="tlDays" class="tl-days"></div>
+      </div>
+      <div class="tl-label"><span id="tlTime" class="mono">--</span><small id="tlLead">+0h</small></div>
+    </div>
+  </main>
+
+  <!-- ===== Point analysis drawer ===== -->
+  <section id="drawer" hidden>
+    <header class="drawer-head">
+      <div>
+        <h2 id="dwTitle">Point analysis</h2>
+        <div class="sub" id="dwSub"></div>
+      </div>
+      <div class="drawer-tabs" id="dwTabs">
+        <button data-tab="sounding" class="active">Sounding</button>
+        <button data-tab="series">Parameters</button>
+        <button data-tab="models">Models</button>
+        <button data-tab="ensemble">Ensemble</button>
+      </div>
+      <button class="icon-btn" id="dwClose" title="Close (Esc)">✕</button>
+    </header>
+    <div class="drawer-body">
+      <div class="tab active" data-tab="sounding">
+        <div class="snd-grid">
+          <div class="snd-plot">
+            <canvas id="skewt"></canvas>
+            <div class="snd-ctl">
+              <div class="seg small" id="parcelSeg">
+                <button data-parcel="ml" class="active">ML</button><button data-parcel="mu">MU</button><button data-parcel="sb">SB</button>
+              </div>
+              <span class="mono" id="sndTime">--</span>
+            </div>
+          </div>
+          <div class="snd-side">
+            <canvas id="hodo"></canvas>
+            <div id="hazardBox" class="hazard"></div>
+          </div>
+          <div class="snd-table" id="sndTable"></div>
+        </div>
+      </div>
+      <div class="tab" data-tab="series"><div class="chart-box"><canvas id="seriesChart"></canvas></div><div class="chart-box"><canvas id="seriesChart2"></canvas></div></div>
+      <div class="tab" data-tab="models">
+        <div class="model-picks" id="mgPicks"></div>
+        <div class="seg small" id="mgVar">
+          <button data-v="cape" class="active">CAPE</button><button data-v="precipitation">Precip</button><button data-v="wind_gusts_10m">Gusts</button><button data-v="temperature_2m">Temp</button><button data-v="dew_point_2m">Dew pt</button><button data-v="wind_speed_500hPa">500 hPa wind</button><button data-v="lifted_index">LI</button>
+        </div>
+        <div class="chart-box tall"><canvas id="mgChart"></canvas></div>
+      </div>
+      <div class="tab" data-tab="ensemble">
+        <div class="seg small" id="ensModel"></div>
+        <div class="seg small" id="ensVar">
+          <button data-v="cape" class="active">CAPE</button><button data-v="precipitation">Precip</button><button data-v="wind_gusts_10m">Gusts</button><button data-v="temperature_2m">Temp</button>
+        </div>
+        <div class="chart-box"><canvas id="ensChart"></canvas></div>
+        <div class="chart-box"><canvas id="ensProb"></canvas></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/chartjs/chart.umd.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/scales.js"></script>
+<script src="js/field.js"></script>
+<script src="js/radar.js"></script>
+<script src="js/lightning.js"></script>
+<script src="js/tracker.js"></script>
+<script src="js/skewt.js"></script>
+<script src="js/drawer.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
