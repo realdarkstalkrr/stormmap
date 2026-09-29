@@ -115,6 +115,9 @@
           <label class="toggle"><input type="checkbox" id="lyrZones" checked><span></span>No-go zones (occupied UA)</label>
         </div>
         <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrObs"><span></span>Surface observations (METAR)</label>
+        </div>
+        <div class="row">
           <label class="toggle"><input type="checkbox" id="lyrRoads"><span></span>Road network</label>
         </div>
       </div>
@@ -159,6 +162,8 @@
       <h2>Convective outlook</h2>
       <p class="hint">Automated guidance from <b id="olModel">—</b>. Categories blend CAPE, shear, SRH and composite indices (STP/SCP/SHIP).</p>
       <div class="seg" id="olDays"></div>
+      <div class="brief-ctl"><button class="btn primary" id="briefBtn">Generate chase briefing</button></div>
+      <div id="briefing" class="briefing" hidden><pre></pre><button class="btn" id="briefCopy">Copy</button></div>
       <div id="olLegend" class="ol-legend"></div>
       <h3>Countries</h3>
       <div id="olCountries" class="ol-countries"></div>
@@ -190,6 +195,7 @@
         <div class="seg small" id="approachSeg"><button data-m="flank" class="active" title="Target the storm's right/south-east flank, away from the hail core">Safe flank</button><button data-m="track" title="Target the storm's forecast position">On track</button></div>
         <button class="btn" id="routePickBtn">Route to point</button>
       </div>
+      <div id="sunBox"></div>
       <div id="routeBox" class="route-box" hidden></div>
 
       <h3>No-go zones</h3>
@@ -197,7 +203,15 @@
       <label class="range-row">Front-line buffer <input type="range" id="frontBuf" min="5" max="60" step="5"><b id="frontBufV"></b></label>
       <label class="range-row">Border zone (UA–RU/BY) <input type="range" id="borderBuf" min="0" max="40" step="5"><b id="borderBufV"></b></label>
       <p class="hint">Routes never enter occupied or contested territory, the buffers above, or cross the closed Ukraine–Russia/Belarus border. Always follow official restrictions, curfews and checkpoints.</p>
+      <h3>Nearby cells</h3>
       <div id="chaseInfo" class="chase-info"><p class="hint">Set your position to get distances, ETAs and intercept solutions for tracked cells.</p></div>
+
+      <h3>Alerts</h3>
+      <div id="alertSettings" class="alert-settings"></div>
+      <div id="alertFeed" class="alert-feed"></div>
+
+      <h3>Chase log</h3>
+      <div id="logBox" class="log-box"></div>
     </section>
 
     <!-- About -->
@@ -330,6 +344,11 @@
 <script src="js/lightning.js"></script>
 <script src="js/tracker.js"></script>
 <script src="js/zones.js"></script>
+<script src="js/sun.js"></script>
+<script src="js/obs.js"></script>
+<script src="js/alerts.js"></script>
+<script src="js/chaselog.js"></script>
+<script src="js/tools.js"></script>
 <script src="js/ranking.js"></script>
 <script src="js/skewt.js"></script>
 <script src="js/drawer.js"></script>

@@ -352,3 +352,23 @@ def strikes(since_ms):
                         "time": int((now - rnd.random() * 5) * 1000)})
     return [s for s in out if s["time"] > since_ms]
 
+
+
+def metars():
+    """Synthetic METAR-like station reports at towns (demo mode)."""
+    from .geo import cities
+    now = int(time.time())
+    out = []
+    for k, (name, cc, lat, lon) in enumerate(cities()):
+        if k % 2:
+            continue
+        f = _field(lat, lon, now)
+        u_dir = f["wind_direction_10m"]
+        wx = "TSRA" if f["precipitation"] > 3 and f["cape"] > 500 else ("RA" if f["precipitation"] > 0.3 else "")
+        cover = 8 if f["cloud_cover"] > 85 else 6 if f["cloud_cover"] > 60 else 4 if f["cloud_cover"] > 30 else 2 if f["cloud_cover"] > 10 else 0
+        out.append({"id": f"DM{k:02d}", "name": name, "lat": lat, "lon": lon, "time": now - now % 1800,
+                    "t": round(f["temperature_2m"]), "td": round(f["dew_point_2m"]), "wdir": round(u_dir / 10) * 10, "vrb": False,
+                    "wspd": round(f["wind_speed_10m"] * 1.944), "wgst": round(f["wind_gusts_10m"] * 1.944) if f["precipitation"] > 1 else None,
+                    "p": f["pressure_msl"], "vis": "6+", "wx": wx, "cover": cover,
+                    "raw": f"DEMO {name.upper()} {round(u_dir / 10) * 10:03d}{round(f['wind_speed_10m'] * 1.944):02d}KT {wx} {round(f['temperature_2m']):02d}/{round(f['dew_point_2m']):02d} Q{round(f['pressure_msl'])}"})
+    return out

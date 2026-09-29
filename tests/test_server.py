@@ -93,6 +93,14 @@ class ServerTests(unittest.TestCase):
             self.get("/api/route?from=50.45,30.52&to=44.95,34.10")
         self.assertEqual(cm.exception.code, 422)
 
+    def test_observations(self):
+        _, o = self.get_json("/api/obs")
+        self.assertGreater(len(o["obs"]), 20)
+        self.assertIn("raw", o["obs"][0])
+        _, g = self.get_json("/api/grid?model=gfs_seamless&region=PL&hour=14")
+        for k in ("conv10", "mfc", "ci", "wmaxshear"):
+            self.assertIn(k, g["available"])
+
     def test_bad_requests(self):
         for path, code in [("/api/grid?model=nope", 400), ("/api/sounding?lat=x&lon=1", 400),
                            ("/api/radar/tile/5/1/1.png?path=/etc/passwd", 400), ("/api/unknown", 404),

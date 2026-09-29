@@ -172,3 +172,62 @@ def geocode(q):
                              "latitude": r.get("latitude"), "longitude": r.get("longitude")} for r in res[:10]]}
 
     return cache.get_or_load(("geo", q.lower()), 86400, load)
+
+
+# ----------------------------------------------------------------------------------------
+# Surface observations (METAR via NOAA Aviation Weather Center)
+# ----------------------------------------------------------------------------------------
+
+AWC_METAR = "https://aviationweather.gov/api/data/metar"
+
+
+def _num(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_metars(items):
+    out = []
+    for m in items or []:
+        lat, lon = _num(m.get("lat")), _num(m.get("lon"))
+        if lat is None or lon is None:
+            continue
+        wdir = m.get("wdir")
+        clouds = m.get("clouds") or []
+        cover = None
+        order = {"SKC": 0, "CLR": 0, "NSC": 0, "CAVOK": 0, "FEW": 2, "SCT": 4, "BKN": 6, "OVC": 8, "OVX": 8, "VV": 8}
+        for c in clouds:
+            cv = order.get(str(c.get("cover", "")).upper())
+            if cv is not None:
+                cover = max(cover or 0, cv)
+        out.append({
+            "id": m.get("icaoId") or m.get("stationId"), "name": m.get("name"), "lat": lat, "lon": lon,
+            "time": int(_num(m.get("obsTime")) or 0),
+            "t": _num(m.get("temp")), "td": _num(m.get("dewp")),
+            "wdir": None if str(wdir).upper() == "VRB" else _num(wdir), "vrb": str(wdir).upper() == "VRB",
+            "wspd": _num(m.get("wspd")), "wgst": _num(m.get("wgst")),        # knots
+            "p": _num(m.get("slp")) or _num(m.get("altim")),                 # hPa
+            "vis": m.get("visib"), "wx": m.get("wxString") or "", "cover": cover,
+            "raw": m.get("rawOb") or "",
+        })
+    return out
+
+
+def observations():
+    def load():
+        if config.DEMO_MODE:
+            return {"source": "demo", "obs": demo.metars()}
+        lat0, lat1, lon0, lon1 = config.REGION_BOUNDS
+        url = AWC_METAR + "?" + urllib.parse.urlencode({
+            "bbox": f"{lat0 - 1},{lon0 - 1},{lat1 + 1},{lon1 + 1}", "format": "json", "hours": 2})
+        data = fetch_json(url, timeout=25)
+        obs = _parse_metars(data if isinstance(data, list) else data.get("data", []))
+        latest = {}
+        for o in obs:  # keep the newest report per station
+            if o["id"] not in latest or o["time"] > latest[o["id"]]["time"]:
+                latest[o["id"]] = o
+        return {"source": "NOAA Aviation Weather Center (METAR)", "obs": list(latest.values())}
+
+    return cache.get_or_load(("metar",), 600, load)

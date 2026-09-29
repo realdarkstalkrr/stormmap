@@ -128,6 +128,25 @@ class DerivedTests(unittest.TestCase):
         self.assertLess(d["li"], 0)
         self.assertGreater(d["cape"], 0)
 
+    def test_convergence_sign_and_magnitude(self):
+        from stormmap.derived import add_gradient_params
+        # 3×3 grid, 1° spacing at the equator; winds blowing inward toward the centre
+        grid = {"step": 1.0, "lat0": -1.0, "nlat": 3, "nlon": 3}
+        idx = list(range(9))
+        u = [5, 0, -5] * 3                     # u decreases eastward -> du/dx < 0
+        v = [5, 5, 5, 0, 0, 0, -5, -5, -5]     # v decreases northward -> dv/dy < 0
+        cols = {"u10": u, "v10": v, "q2": [10.0] * 9, "cape": [1500] * 9, "cin": [-10] * 9}
+        add_gradient_params(cols, grid, idx)
+        dx = 111194.9  # m per degree
+        expected = (5 / dx + 5 / dx) * 1e5    # -(du/dx + dv/dy) at the centre
+        self.assertAlmostEqual(cols["conv10"][4], expected, places=2)
+        self.assertGreater(cols["mfc"][4], 0)
+        self.assertGreater(cols["ci"][4], 50)
+
+    def test_wmaxshear(self):
+        d = compute_point(self._hourly(), 0)
+        self.assertAlmostEqual(d["wmaxshear"], (2 * 2500) ** 0.5 * d["shr6"], places=3)
+
     def test_threat_levels(self):
         self.assertEqual(threat_level(0, 30, 300, 0, 0, 0, 5, 0, 0), 0)
         self.assertEqual(threat_level(300, 5, 0, 0, 0, 0, -1, 0, 0), 1)

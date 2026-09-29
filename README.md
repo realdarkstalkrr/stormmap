@@ -33,6 +33,13 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Storm ranking** | Every tracked cell gets a 0–100 chase-potential score and a verdict: HIGH, GOOD, MARGINAL, NO POTENTIAL or DYING. The score has five parts shown as bars: intensity, trend, lightning, the model environment along the cell's forecast path (SCP/STP/SHIP/CAPE) and persistence. Each card lists the reasons in plain language and marks cells in, or heading into, no-go areas as *not chaseable*. |
 | **Road routing & intercept** | Routes follow real roads via OSRM (OpenStreetMap), and every route is checked against the no-go raster every 0.5 km. If the fastest road route crosses a forbidden area, the planner automatically re-routes through safe towns. **Plan intercept** works out where the storm will be when you can get there, targeting either its safer south-east flank or its track, with a 10-minute lead. It shows drive time, ETA, the margin before the storm arrives, turn-by-turn directions, and a warning if the storm heads into a no-go area. There is also an optional road-network overlay. |
 | **No-go zones (Ukraine)** | Occupied and contested territory comes from **[DeepStateMap](https://deepstatemap.live)**, a Ukrainian OSINT project with daily updates. It is rasterized at **0.01° (~1.1 × 0.7 km)**. On top of that come a configurable front-line safety buffer (default 30 km) and a UA–RU/BY border danger zone (default 20 km). Routes never cross the closed Ukraine–Russia/Belarus border. |
+| **Initiation & severe parameters** | Surface convergence and moisture-flux convergence (where storms fire), an initiation-potential index built from CAPE, weak CIN and convergence, and WMAXSHEAR (√(2·CAPE) × deep-layer shear, the European severe-storm discriminator used by ESSL). |
+| **Surface observations** | METAR station plots from NOAA's Aviation Weather Center: temperature, dew point, wind barb, sea-level pressure, sky cover, present weather and gusts. Click a station for the raw report. |
+| **Chase briefing** | A one-click text briefing covering risk by country, timing, the best target with its parameters, expected storm mode and hazards, sunset and civil dusk at the target, backup targets, the current top-ranked cells, warnings and no-go zone status. Copy it to share. |
+| **Alerts** | Lightning within a set radius (with the 30/30 rule), a cell forecast to pass over you, a new high-potential chaseable storm, and orange/red warnings in your country. Alerts appear in the app feed, play a sound, and show as desktop notifications when the tab is hidden. |
+| **Chase log** | Records your GPS track and one-tap field reports: wall cloud, funnel, tornado, hail size, wind damage, flooding, lightning damage and notes. Each report is tagged with the nearest tracked cell. Export as GPX, GeoJSON or an ESWD-style CSV. Everything is stored only in your browser. |
+| **Daylight** | Sunrise, golden hour, sunset and civil dusk at your position, a daylight countdown, and a warning when a planned intercept happens after dark. |
+| **Tools** | A distance and bearing ruler, and trend sparklines (max dBZ, area, lightning) for every ranked cell. |
 | **Chase mode** | GPS tracking or a manually set position. For each tracked cell it shows distance and bearing, the closest point of approach, a *"cell hits you in N min"* alert, and an intercept solution (heading, distance and time at your road speed). |
 | **Warnings** | MeteoAlarm feeds for DE, PL, SK, RO, BG, FI and UA, with a convective filter. |
 | **Satellite** | EUMETSAT Meteosat IR 10.8, RGB Convection, RGB Airmass and WV 6.2 (WMS). |
@@ -82,7 +89,7 @@ static/js/icons.js     SVG weather icons (WMO codes) and layer glyphs
 static/                index.html, css, other js (radar, lightning, tracker, Skew-T, drawer…)
 ```
 
-API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/zones`, `/api/route`, `/api/intercept`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
+API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/obs`, `/api/zones`, `/api/route`, `/api/intercept`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
 
 ## Tests
 
@@ -96,6 +103,8 @@ python3 -m unittest discover -s tests -t .
 - **Radar coverage is uneven.** Coverage over Russia, Belarus, Ukraine and Türkiye depends on what RainViewer receives. Where radar is missing, use the lightning layer and the model fields.
 - **Tracker reflectivity is estimated.** The tracker reads reflectivity back from the colours of the radar tiles, so dBZ values are approximate (±3–5 dBZ).
 - **No-go zones are safety aids, not official boundaries.** DeepStateMap is updated about once a day and the front moves, so keep the buffer generous and always follow official restrictions, curfews and checkpoints. The polygons are rasterized to about 1 km, but the source itself can lag reality by hours to days. If the feed is unreachable and nothing is cached, the app uses a deliberately over-blocking coarse fallback (±20 km) and flags it in red. The source name and map date are shown in Chase → No-go zones. Any polygon features that weren't classified are listed in `/api/zones` → `meta.ignored_polygon_names`, so a change in the source's naming scheme gets noticed.
+- **METAR coverage is uneven.** Most Ukrainian airports have not reported since 2022, so expect few stations in Ukraine; coverage elsewhere in the region is good.
+- **Grid-scale convergence is weaker than reality.** Convergence and MFC are computed from the model grid, so on coarse grids they only show broad features. Pick a single country to get a finer grid.
 - **Offline routing is approximate.** Without a reachable routing server (and in `--demo`), routes use straight links between towns and are labelled *Approximate — no road data*.
 - **Blitzortung.org data is for private, non-commercial use.** GPS in browsers requires HTTPS or `localhost`. On plain HTTP from another device, use *Set position on map*.
 - **This is automated guidance.** Always check official forecasts and warnings, and chase responsibly.

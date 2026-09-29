@@ -11,7 +11,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 from . import config, demo
-from .derived import PARAMS, compute_point
+from .derived import PARAMS, add_gradient_params, compute_point
 from .geo import build_grid, country_at, nearest_city
 from .net import FetchError, cache, fetch_json
 from .sounding import analyze, profile_from_openmeteo
@@ -19,6 +19,7 @@ from .sounding import analyze, profile_from_openmeteo
 log = logging.getLogger("stormmap.forecast")
 
 ROUND2 = {"stp", "scp", "ship", "ehi"}
+GRADIENT_KEYS = {"conv10", "mfc", "ci"}
 VECTOR_KEYS = ["u10", "v10", "u850", "v850", "u500", "v500", "u250", "v250"]
 THREAT_NAMES = ["None", "Thunder", "Marginal", "Slight", "Enhanced", "Moderate"]
 
@@ -139,7 +140,7 @@ def _load_grid(model, region):
     nt = len(times)
 
     # Derived parameters for every hour: hours[h][param] -> list over points
-    keys = list(PARAMS) + VECTOR_KEYS
+    keys = [k for k in PARAMS if k not in GRADIENT_KEYS] + VECTOR_KEYS + ["q2"]
     hours = []
     for hi in range(nt):
         cols = {k: [] for k in keys}
@@ -154,6 +155,9 @@ def _load_grid(model, region):
                 if v is not None:
                     v = round(v, 2 if k in ROUND2 else 1)
                 cols[k].append(v)
+        add_gradient_params(cols, {"step": g["step"], "lat0": g["lat0"], "nlat": g["nlat"], "nlon": g["nlon"]},
+                            [iy * g["nlon"] + ix for iy, ix in g["points"]])
+        del cols["q2"]
         hours.append(cols)
     available = [k for k in PARAMS if any(v is not None for h in hours[:12] for v in h[k])]
     log.info("grid %s/%s: %d points x %d h in %.1fs", model, region, len(coords), nt, time.time() - t0)

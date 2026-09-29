@@ -54,6 +54,7 @@
     drop: '<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>',
     bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
     storm: '<path d="M6 13a4 4 0 0 1 .6-8A5.5 5.5 0 0 1 17 6a3.5 3.5 0 0 1 0 7"/><path d="M12 11l-3 5h4l-2 5"/>',
+    target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
     shear: '<path d="M4 20l4-6 4-3 8-5"/><path d="M4 20h4M4 16h6M4 12h9M4 8h12"/>',
   };
   SM.glyph = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${G[name] || ''}</svg>`;

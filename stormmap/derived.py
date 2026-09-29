@@ -53,6 +53,10 @@ PARAMS = {
     "kindex": ("K-index", "°C", "Air-mass thunderstorm potential", "none"),
     "tt": ("Total totals", "°C", "", "none"),
     "lpi": ("Lightning potential", "J/kg", "ICON lightning potential index", "none"),
+    "wmaxshear": ("WMAXSHEAR", "m²/s²", "√(2·CAPE) × 0–6 km shear (ESSL/Taszarek severe discriminator; >500 severe, >1000 significant)", "none"),
+    "conv10": ("Surface convergence", "10⁻⁵ s⁻¹", "10 m wind convergence — boundaries where storms initiate (grid-scale)", "none"),
+    "mfc": ("Moisture-flux convergence", "g/kg/h", "Surface moisture-flux convergence — favoured initiation zones", "none"),
+    "ci": ("Initiation potential", "%", "Chance-style index for storm initiation: CAPE, weak CIN and surface convergence", "pct"),
 }
 
 
@@ -218,5 +222,72 @@ def compute_point(h, i, elevation=0.0):
         "u500": w500[0] if w500 else None, "v500": w500[1] if w500 else None,
         "u250": w250[0] if w250 else None, "v250": w250[1] if w250 else None,
     }
+    out["wmaxshear"] = math.sqrt(2 * cape) * shr6 if (cape is not None and cape > 0 and shr6 is not None) else (0.0 if shr6 is not None else None)
+    out["q2"] = 622.0 * sat_vapor_pressure(min(td2, t2)) / 1000.0 if (td2 is not None and t2 is not None) else None
     out["threat"] = threat_level(cape, shr6, srh1, stp, scp_v, ship_v, li, lpi, precip)
     return out
+
+
+def add_gradient_params(cols, grid, idx):
+    """Grid-based kinematic fields for one hour (in place): surface convergence,
+    moisture-flux convergence and the initiation-potential index.
+
+    cols: {param: [values per point]}; grid: dict(step, lat0, nlat, nlon); idx: flat grid index per point.
+    """
+    n, nlon, step = len(idx), grid["nlon"], grid["step"]
+    pos = {k: p for p, k in enumerate(idx)}
+    u, v, q = cols.get("u10"), cols.get("v10"), cols.get("q2")
+    conv, mfc, ci = [None] * n, [None] * n, [None] * n
+    r_earth = 6371000.0
+    dy = math.radians(step) * r_earth
+    for p, k in enumerate(idx):
+        if u is None or u[p] is None or v[p] is None:
+            continue
+        iy, ix = divmod(k, nlon)
+        lat = grid["lat0"] + iy * step
+        dx = math.radians(step) * r_earth * math.cos(math.radians(lat))
+
+        def nb(di, dj):
+            return pos.get((iy + dj) * nlon + ix + di) if 0 <= ix + di < nlon else None
+
+        e, w, nn, s = nb(1, 0), nb(-1, 0), nb(0, 1), nb(0, -1)
+
+        def ddx(arr):
+            a = arr[e] if e is not None else None
+            b = arr[w] if w is not None else None
+            if a is not None and b is not None:
+                return (a - b) / (2 * dx)
+            if a is not None:
+                return (a - arr[p]) / dx
+            if b is not None:
+                return (arr[p] - b) / dx
+            return None
+
+        def ddy(arr):
+            a = arr[nn] if nn is not None else None
+            b = arr[s] if s is not None else None
+            if a is not None and b is not None:
+                return (a - b) / (2 * dy)
+            if a is not None:
+                return (a - arr[p]) / dy
+            if b is not None:
+                return (arr[p] - b) / dy
+            return None
+
+        dudx, dvdy = ddx(u), ddy(v)
+        if dudx is None or dvdy is None:
+            continue
+        div = dudx + dvdy
+        conv[p] = round(-div * 1e5, 2)
+        if q is not None and q[p] is not None:
+            qu = [None if (a is None or b is None) else a * b for a, b in zip(q, u)]
+            qv = [None if (a is None or b is None) else a * b for a, b in zip(q, v)]
+            dqu, dqv = ddx(qu), ddy(qv)
+            if dqu is not None and dqv is not None:
+                mfc[p] = round(-(dqu + dqv) * 3600, 2)
+        cape, cin = cols["cape"][p] or 0, cols["cin"][p] or 0
+        f_cape = min(1.0, cape / 1000.0)
+        f_cin = max(0.0, min(1.0, 1 + cin / 150.0))
+        f_conv = max(0.0, min(1.0, 0.35 + conv[p] / 2.0))
+        ci[p] = round(100 * f_cape * f_cin * f_conv)
+    cols["conv10"], cols["mfc"], cols["ci"] = conv, mfc, ci

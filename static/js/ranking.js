@@ -52,7 +52,7 @@
       else if (nz(envBest.scp) < 1) reasons.push(['-', 'Poor supercell environment (SCP < 1)']);
       if (envNow && envs.length > 1 && nz(envs[envs.length - 1].scp) > nz(envNow.scp) + 1) reasons.push(['+', 'Moving into more favourable air']);
       if (envNow && envs.length > 1 && nz(envs[envs.length - 1].scp) < nz(envNow.scp) - 1.5) reasons.push(['-', 'Moving into less favourable air']);
-    } else reasons.push(['?', 'Model environment not loaded yet']);
+    } else reasons.push(['?', SM.state.nowFields ? 'No model environment here (outside the selected region)' : 'Model environment not loaded yet']);
     // --- organisation / persistence (0–15)
     let org = 0;
     if (tr.age >= 60) org += 8; else if (tr.age >= 30) org += 5; else if (tr.age >= 10) org += 2;
@@ -90,6 +90,24 @@
     };
   };
 
+  function spark(vals, color) {
+    const v = vals.filter(x => x != null);
+    if (v.length < 2) return '<svg></svg>';
+    const lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
+    const pts = vals.map((x, i) => `${(i / (vals.length - 1) * 88 + 1).toFixed(1)},${(20 - ((x - lo) / span) * 18).toFixed(1)}`).join(' ');
+    return `<svg viewBox="0 0 90 22"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  }
+
+  /** Per-frame history of a track: max dBZ, area and lightning in the 10 min before each frame. */
+  function history(tr) {
+    const now = Date.now();
+    return {
+      dbz: tr.pts.map(p => p.maxDbz),
+      area: tr.pts.map(p => p.area),
+      ltg: tr.pts.map(p => SM.lightning.countNear(p.lat, p.lon, Math.sqrt(p.area / Math.PI) + 8, 10 * 60000, Math.max(0, now - p.time * 1000))),
+    };
+  }
+
   /* ---------------- Panel ---------------- */
   const R = SM.ranking = { filter: 'all' };
 
@@ -122,6 +140,7 @@
         </div>
         <div class="rk-place">${SM.esc(tr.place.label)} · ${c.maxDbz} dBZ · ${tr.v ? SM.geo.compass(tr.dir) + ' ' + SM.units.fmt('wind', tr.spd, true) : 'motion unknown'}${r.chase.dist != null ? ` · ${Math.round(r.chase.dist)} km from you` : ''}</div>
         <div class="rk-meter"><i style="width:${r.score}%"></i></div>
+        ${(() => { const h = history(tr); return tr.pts.length > 1 ? `<div class="rk-spark"><span>dBZ</span>${spark(h.dbz, '#f43f5e')}<span>area</span>${spark(h.area, '#22d3ee')}<span>ltg</span>${spark(h.ltg, '#fde047')}</div>` : ''; })()}
         <div class="rk-parts">${parts}</div>
         <ul class="rk-reasons">${reasons}${chase}</ul>
         <div class="rk-actions">

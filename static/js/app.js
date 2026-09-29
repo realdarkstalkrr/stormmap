@@ -240,7 +240,8 @@
       SM.$('#particleLevel').textContent = lvl === '10' ? '10 m' : lvl + ' hPa';
     } else SM.particleLayer.setField(null, null);
     // values at cities
-    SM.cityLayer.setData(SM.$('#lyrValues').checked && g ? g : null, S.param);
+    // city values give way to station plots when observations are shown
+    SM.cityLayer.setData(SM.$('#lyrValues').checked && !SM.obs.enabled && g ? g : null, S.param);
     if (SM.$('#lyrBarbs').checked && S.gridData) {
       const lvl = SM.$('#barbLevel').value, f = S.gridData.fields;
       const u = f['u' + lvl], v = f['v' + lvl];
@@ -476,6 +477,8 @@
       C.marker = L.marker([lat, lon], { pane: 'cellPane', icon: L.divIcon({ className: '', iconSize: [18, 18], html: '<div style="width:18px;height:18px;border-radius:50%;background:#22d3ee;border:3px solid #031014;box-shadow:0 0 0 3px rgba(34,211,238,.35),0 0 18px #22d3ee"></div>' }) }).addTo(SM.map);
     } else C.marker.setLatLng([lat, lon]);
     C.render();
+    SM.$('#sunBox').innerHTML = SM.sun.summary(lat, lon);
+    SM.chaselog.onPosition(lat, lon, src);
     SM.tracker.refreshEnrich();
   };
 
@@ -639,6 +642,7 @@
         <div class="rt-head"><b>Intercept C${tr.id}</b><span class="rt-mode">${x.mode === 'flank' ? 'safe flank' : 'on track'}</span><button class="icon-btn" id="rtClose">✕</button></div>
         <div class="rt-plan">Drive <b>${SM.geo.compass(x.approach_bearing)}</b> to ${SM.esc(x.target_place ? x.target_place.label : '')}. You arrive at <b>${SM.localHM(x.arrive_ts)}</b>; the storm (moving ${x.storm_heading_text} at ${SM.units.fmt('wind', x.storm_speed_kmh / 3.6, true)}) reaches the area around <b>${SM.localHM(x.storm_ts)}</b> — <b>${Math.round(x.margin_min)} min</b> margin.</div>
         ${x.enters_nogo_min ? `<div class="danger-banner">⚠ Storm enters a no-go area in ~${x.enters_nogo_min} min — do not follow it there.</div>` : ''}
+        ${SM.sun.isDark(x.storm_ts, x.target[0], x.target[1]) ? '<div class="danger-banner">🌙 The intercept happens after civil dusk — storm structure and hazards will be very hard to see.</div>' : ''}
         ${routeHTML(x.route)}`;
       SM.$('#rtClose').onclick = clearRoute;
     } catch (e) {
@@ -693,6 +697,8 @@
     });
     SM.$('#lyrRoads').addEventListener('change', setRoads);
     SM.$('#lyrZones').addEventListener('change', e => SM.zones.setEnabled(e.target.checked));
+    SM.$('#lyrObs').addEventListener('change', e => { SM.obs.setEnabled(e.target.checked); renderField(false); });
+    setInterval(() => { if (C.pos) SM.$('#sunBox').innerHTML = SM.sun.summary(C.pos[0], C.pos[1]); }, 60000);
     SM.$('#gpsBtn').addEventListener('click', () => {
       if (C.watch != null) {
         navigator.geolocation.clearWatch(C.watch); C.watch = null;
@@ -809,6 +815,9 @@
     });
 
     SM.map.on('click', e => {
+      if (SM.tools.click(e.latlng)) return;
+      const st = SM.obs.hit(e.containerPoint);
+      if (st && !C.picking && !C.routePicking) { SM.obs.popup(st); return; }
       if (C.picking) {
         C.picking = false; SM.$('#pickBtn').classList.remove('on'); SM.map.getContainer().style.cursor = '';
         C.setPos(e.latlng.lat, e.latlng.lng, 'manual');
@@ -882,6 +891,10 @@
     SM.lightning.init();
     SM.zones.init();
     SM.ranking.init();
+    SM.obs.init();
+    SM.tools.init();
+    SM.alerts.init();
+    SM.chaselog.init();
     SM.tracker.init();
 
     // first grid load: pick the current hour once the time axis is known

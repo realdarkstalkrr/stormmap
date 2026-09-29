@@ -113,6 +113,8 @@ def route_api(path, qs):
         return 200, "json", routing.intercept(o, cell, _float_or(qs, "front", zones.DEFAULT_FRONT_KM),
                                               _float_or(qs, "border", zones.DEFAULT_BORDER_KM), _float_or(qs, "speed", 80),
                                               mode if mode in ("flank", "track") else "flank"), 0
+    if path == "/api/obs":
+        return 200, "json", sources.observations(), 120
     if path == "/api/warnings":
         return 200, "json", sources.warnings(), 120
     if path == "/api/geocode":

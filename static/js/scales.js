@@ -43,6 +43,10 @@
     lcl: S([[250, '#2fb38a'], [750, '#86c35a'], [1000, '#b8d44a'], [1250, '#f2c14e'], [1500, '#f08a3c'], [2000, '#9a4a3a', .7], [3000, '#3a2a2a', .3]]),
     kindex: S([[15, '#10233a', 0], [20, '#1d4f73', .6], [25, '#1c8a8a'], [30, '#b8d44a'], [35, '#f08a3c'], [40, '#e5533d'], [45, '#e879f9']]),
     tt: S([[40, '#10233a', 0], [44, '#1d4f73', .6], [48, '#1c8a8a'], [52, '#b8d44a'], [55, '#f08a3c'], [58, '#e5533d'], [62, '#e879f9']]),
+    wmaxshear: S([[200, '#10233a', 0], [350, '#1d4f73', .6], [500, '#b8d44a'], [750, '#f2c14e'], [1000, '#f08a3c'], [1300, '#e5533d'], [1700, '#c21f4a'], [2200, '#e879f9'], [3000, '#ffffff']]),
+    conv10: S([[0.03, '#10233a', 0], [0.08, '#1d4f73', .55], [0.15, '#1c8a8a'], [0.3, '#b8d44a'], [0.5, '#f2c14e'], [0.8, '#f08a3c'], [1.2, '#e5533d'], [2, '#e879f9']]),
+    mfc: S([[0.03, '#10233a', 0], [0.08, '#1d4f73', .55], [0.15, '#1c8a8a'], [0.3, '#b8d44a'], [0.5, '#f2c14e'], [0.8, '#f08a3c'], [1.2, '#e5533d'], [2, '#e879f9']]),
+    ci: S([[5, '#10233a', 0], [12, '#1d4f73', .6], [25, '#1c8a8a'], [40, '#b8d44a'], [55, '#f2c14e'], [70, '#f08a3c'], [85, '#e5533d'], [100, '#e879f9']]),
     lpi: S([[0.2, '#fef9c3', 0], [1, '#fde047', .6], [3, '#facc15'], [6, '#fb923c'], [10, '#ef4444'], [20, '#e879f9']]),
   };
   SM.THREAT_COLORS = THREAT;
@@ -104,7 +108,8 @@
   SM.PARAM_GROUPS = [
     ['Weather', ['t2', 'precip', 'cloud', 'wind10', 'gust', 'mslp', 'rh2', 'td2']],
     ['Upper air', ['t850', 't500', 'wind850', 'wind500', 'wind250', 'z500', 'theta_e', 'fzl']],
-    ['Storm composites', ['threat', 'stp', 'scp', 'ship', 'ehi']],
+    ['Storm composites', ['threat', 'stp', 'scp', 'ship', 'wmaxshear', 'ehi']],
+    ['Initiation', ['ci', 'conv10', 'mfc']],
     ['Instability', ['cape', 'li', 'cin', 'lr75', 'lcl', 'kindex', 'tt', 'lpi']],
     ['Wind shear', ['shr6', 'shr1', 'srh3', 'srh1']],
   ];
@@ -119,7 +124,8 @@
     ['mslp', 'Pressure', 'pressure', [['Sea level', 'mslp'], ['500 hPa height', 'z500']]],
     ['rh', 'Humidity', 'drop', [['Relative', 'rh2'], ['Dew point', 'td2']]],
     ['cape', 'CAPE', 'bolt', [['CAPE', 'cape'], ['Lifted index', 'li'], ['CIN', 'cin']]],
-    ['storm', 'Storms', 'storm', [['Threat', 'threat'], ['STP', 'stp'], ['SCP', 'scp'], ['SHIP', 'ship']]],
+    ['storm', 'Storms', 'storm', [['Threat', 'threat'], ['STP', 'stp'], ['SCP', 'scp'], ['SHIP', 'ship'], ['WMAXSHEAR', 'wmaxshear']]],
+    ['init', 'Initiation', 'target', [['Potential', 'ci'], ['Convergence', 'conv10'], ['Moisture flux', 'mfc']]],
     ['shear', 'Shear', 'shear', [['0–6 km', 'shr6'], ['0–1 km', 'shr1'], ['SRH 0–1', 'srh1'], ['SRH 0–3', 'srh3']]],
   ];
   // Wind level shown by the particle animation for each parameter
