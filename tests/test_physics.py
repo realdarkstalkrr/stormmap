@@ -143,6 +143,45 @@ class DerivedTests(unittest.TestCase):
         self.assertGreater(cols["mfc"][4], 0)
         self.assertGreater(cols["ci"][4], 50)
 
+    def test_vorticity_solid_body_rotation(self):
+        from stormmap.derived import add_gradient_params
+        # solid-body rotation around the centre of a 3×3 grid at the equator (f = 0): ζ = 2·w
+        grid = {"step": 1.0, "lat0": -1.0, "nlat": 3, "nlon": 3}
+        dx = 111194.9
+        w = 1e-5
+        u5, v5 = [], []
+        for iy in range(3):
+            for ix in range(3):
+                x, y = (ix - 1) * dx, (iy - 1) * dx
+                u5.append(-w * y)
+                v5.append(w * x)
+        n = 9
+        cols = {"u500": u5, "v500": v5, "cape": [0] * n, "cin": [0] * n}
+        add_gradient_params(cols, grid, list(range(9)))
+        self.assertAlmostEqual(cols["vort500"][4], 2.0, places=1)  # 2·1e-5 s⁻¹ in 1e-5 units
+
+    def test_frontogenesis_confluence_positive(self):
+        from stormmap.derived import add_gradient_params
+        # θ increases northward; confluent flow (v converging in y) tightens the gradient → positive F
+        grid = {"step": 1.0, "lat0": -1.0, "nlat": 3, "nlon": 3}
+        t850 = [10, 10, 10, 13, 13, 13, 16, 16, 16]
+        u8 = [0.0] * 9
+        v8 = [5, 5, 5, 0, 0, 0, -5, -5, -5]
+        cols = {"t850": t850, "u850": u8, "v850": v8, "cape": [0] * 9, "cin": [0] * 9}
+        add_gradient_params(cols, grid, list(range(9)))
+        self.assertGreater(cols["fronto850"][4], 0)
+        self.assertAlmostEqual(cols["tadv850"][4], 0.0, places=3)  # no flow across isotherms at the centre
+
+    def test_advanced_sounding_indices(self):
+        ix, plot = analyze(synthetic_profile())
+        for k in ("srw_9_11", "supercell_type", "critical_angle", "brn", "sigsvr", "windex", "mmp", "conv_temp", "thetae_deficit", "h_m20"):
+            self.assertIsNotNone(ix[k], k)
+        self.assertTrue(0 <= ix["critical_angle"] <= 180)
+        self.assertTrue(0 <= ix["mmp"] <= 1)
+        self.assertGreaterEqual(ix["conv_temp"], 29.9)
+        self.assertEqual(len(plot["wetbulb"]), len(plot["p"]))
+        self.assertTrue(plot["downdraft"] and plot["srwind"])
+
     def test_wmaxshear(self):
         d = compute_point(self._hourly(), 0)
         self.assertAlmostEqual(d["wmaxshear"], (2 * 2500) ** 0.5 * d["shr6"], places=3)

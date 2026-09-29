@@ -205,8 +205,9 @@
       const age = Math.round((Date.now() / 1000 - d.fetched) / 60);
       const m = SM.meta.models[S.model];
       SM.status('stModel', 'ok', `${m.name}: ${d.idx.length} grid points, step ${d.grid.step}°, fetched ${age} min ago`);
-      SM.$('#modelBadge').innerHTML = `<b>${SM.esc(m.name)}</b> · ${SM.esc(m.res)} · grid ${d.grid.step}° · updated ${age < 1 ? 'just now' : age + ' min ago'}`;
+      SM.$('#modelBadge').innerHTML = `<b>${SM.esc(m.name)}</b> · ${SM.esc(m.res)} · grid ${d.grid.step}° · updated ${age < 1 ? 'just now' : age + ' min ago'}${S.diffModel ? ` · <b>Δ vs ${SM.esc(SM.meta.models[S.diffModel].name)}</b>` : ''}`;
       prefetch();
+      if (S.diffModel && (!S.diffData || S.diffData.hour !== S.hour)) loadDiff();
     } catch (e) {
       if (id !== gridReq) return;
       SM.status('stModel', 'err', e.message);
@@ -221,17 +222,53 @@
     }
   }
 
+  /* ---------- model difference (A − B) ---------- */
+  function diffGrid() {
+    const d = S.diffData;
+    if (!S.diffModel || !d || d.hour !== S.hour || !S.gridData || SM.scales[S.param].categorical) return null;
+    const a = S.gridData.fields[S.param], b = d.fields[S.param];
+    if (!a || !b || d.idx.length !== S.gridData.idx.length) return null;
+    const diff = a.map((x, i) => (x == null || b[i] == null ? null : x - b[i]));
+    const abs = diff.filter(x => x != null).map(Math.abs).sort((x, y) => x - y);
+    if (!abs.length) return null;
+    const R = Math.max(abs[Math.floor(abs.length * 0.95)] || 0, 1e-3);
+    const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+    SM.scales.__diff = { stops: [[-R, hex('#1d4ed8'), 1], [-R / 2, hex('#60a5fa'), .8], [-R * 0.1, hex('#1e293b'), 0], [R * 0.1, hex('#1e293b'), 0], [R / 2, hex('#fb923c'), .8], [R, hex('#dc2626'), 1]] };
+    const p = SM.meta.params[S.param];
+    SM.meta.params.__diff = {
+      label: `Δ ${p.label} (${SM.meta.models[S.model].name.split(' ').slice(0, 2).join(' ')} − ${SM.meta.models[S.diffModel].name.split(' ').slice(0, 2).join(' ')})`,
+      unit: p.unit, desc: 'Model difference', kind: p.kind === 'temp' ? 'tempdiff' : p.kind,
+    };
+    return new SM.Grid(S.gridData.grid, S.gridData.idx, diff);
+  }
+
+  let diffReq = 0;
+  async function loadDiff() {
+    if (!S.diffModel) { S.diffData = null; renderField(); return; }
+    const id = ++diffReq;
+    SM.loading('diff', `Loading ${SM.meta.models[S.diffModel].name} for comparison…`);
+    try {
+      const d = await SM.api('grid', { model: S.diffModel, region: S.region, hour: S.hour });
+      if (id !== diffReq) return;
+      S.diffData = d;
+      renderField();
+    } catch (e) { SM.toast('Model difference: ' + e.message, true); } finally { SM.loading('diff'); }
+  }
+
   function renderField(fade = true) {
-    const g = S.grids[S.param];
+    const dg = diffGrid();
+    const g = dg || S.grids[S.param];
+    const key = dg ? '__diff' : S.param;
+    SM.$('#legend').innerHTML = SM.legendHTML(key);
     const layers = [];
     if (SM.$('#lyrField').checked && g) {
-      if (S.param === 'precip' && S.grids.cloud) layers.push({ grid: S.grids.cloud, key: 'cloud' });
-      layers.push({ grid: g, key: S.param });
+      if (S.param === 'precip' && S.grids.cloud && !dg) layers.push({ grid: S.grids.cloud, key: 'cloud' });
+      layers.push({ grid: g, key });
     }
     SM.fieldLayer.setData(layers, fade);
     // isolines
     let iso = SM.$('#isoSel').value;
-    if (iso === 'auto') iso = S.param === 'mslp' ? 'mslp' : S.param === 'z500' ? 'z500' : 'none';
+    if (iso === 'auto') iso = S.param === 'mslp' ? 'mslp' : (S.param === 'z500' || S.param === 'vort500') ? 'z500' : 'none';
     if (iso === 'mslp' && S.grids.mslp) {
       SM.contourLayer.setData(S.grids.mslp, { interval: 4, bold: 20, extrema: true, format: v => SM.units.fmt('pressure', v) });
     } else if (iso === 'z500' && S.grids.z500) {
@@ -246,7 +283,7 @@
     } else SM.particleLayer.setField(null, null);
     // values at cities
     // city values give way to station plots when observations are shown
-    SM.cityLayer.setData(SM.$('#lyrValues').checked && !SM.obs.enabled && g ? g : null, S.param);
+    SM.cityLayer.setData(SM.$('#lyrValues').checked && !SM.obs.enabled && g ? g : null, key);
     if (SM.$('#lyrBarbs').checked && S.gridData) {
       const lvl = SM.$('#barbLevel').value, f = S.gridData.fields;
       const u = f['u' + lvl], v = f['v' + lvl];
@@ -775,6 +812,13 @@
 
     SM.$('#lyrField').addEventListener('change', () => renderField());
     for (const id of ['#lyrParticles', '#lyrValues', '#isoSel']) SM.$(id).addEventListener('change', () => renderField(false));
+    const ds = SM.$('#diffSel');
+    for (const [k, m] of Object.entries(SM.meta.models)) ds.appendChild(SM.el('option', { value: k }, SM.esc(m.name)));
+    ds.addEventListener('change', () => {
+      S.diffModel = ds.value && ds.value !== S.model ? ds.value : null;
+      if (ds.value && ds.value === S.model) { SM.toast('Pick a different model than the one shown', true); ds.value = ''; }
+      S.diffData = null; loadDiff();
+    });
     SM.$('#settingsBtn').addEventListener('click', e => {
       e.stopPropagation();
       const m = SM.$('#settingsMenu');
@@ -820,6 +864,7 @@
     });
 
     SM.map.on('click', e => {
+      if (SM.sections.click(e.latlng)) return;
       if (SM.tools.click(e.latlng)) return;
       const st = SM.obs.hit(e.containerPoint);
       if (st && !C.picking && !C.routePicking) { SM.obs.popup(st); return; }
@@ -898,6 +943,7 @@
     SM.ranking.init();
     SM.obs.init();
     SM.tools.init();
+    SM.sections.init();
     SM.alerts.init();
     SM.chaselog.init();
     SM.tracker.init();

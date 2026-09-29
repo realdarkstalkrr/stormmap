@@ -40,6 +40,12 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Chase log** | Records your GPS track and one-tap field reports: wall cloud, funnel, tornado, hail size, wind damage, flooding, lightning damage and notes. Each report is tagged with the nearest tracked cell. Export as GPX, GeoJSON or an ESWD-style CSV. Everything is stored only in your browser. |
 | **Daylight** | Sunrise, golden hour, sunset and civil dusk at your position, a daylight countdown, and a warning when a planned intercept happens after dark. |
 | **Tools** | A distance and bearing ruler, and trend sparklines (max dBZ, area, lightning) for every ranked cell. |
+| **Vertical cross-sections** | Use the section tool on the map and click point A, then point B. It samples 25 model columns along the great circle and draws them against pressure and distance. You can switch between four displays: θe contours over RH shading with the 0 °C isotherm, temperature with θ, isotachs with θ, and the wind component normal to the section. Wind barbs and terrain are included, and the section follows the timeline hour. |
+| **Time–height sections** | A drawer tab showing 72 hours of the model column at a point. It has RH shading, isotherms (0 °C in bold), θe or isotachs with θ, and wind barbs. |
+| **Advanced sounding diagnostics** | Storm-relative winds for 0–2, 4–6 and 9–11 km, with a Rasmussen–Straka supercell type (HP, classic or LP). Also the critical angle (Esterheld & Giuliano), BRN and BRN shear, the Craven–Brooks significant-severe parameter, WINDEX (McCann), MCS maintenance probability (Coniglio et al.), convective temperature, θe deficit, 3–6 and 3–8 km lapse rates, and the −10/−20/−30 °C heights with hail-growth-zone depth. The Skew-T adds wet-bulb and downdraft-parcel traces, and there is a storm-relative wind profile plot. |
+| **Sounding tools** | *What-if* surface T/Td modification recomputes every parcel and index. You can overlay any other model's T/Td on the Skew-T, and export the sounding in SHARPpy/SPC `%RAW%` format or as CSV. |
+| **Synoptic diagnostics** | 500 hPa absolute vorticity (drawn with 500 hPa height contours), 850 hPa temperature advection, and 850 hPa 2-D kinematic (Petterssen) frontogenesis, all computed from the model grid. |
+| **Model difference maps** | Shows any field as model A − model B on a diverging colour scale, for comparing guidance and seeing forecast uncertainty. |
 | **Chase mode** | GPS tracking or a manually set position. For each tracked cell it shows distance and bearing, the closest point of approach, a *"cell hits you in N min"* alert, and an intercept solution (heading, distance and time at your road speed). |
 | **Warnings** | MeteoAlarm feeds for DE, PL, SK, RO, BG, FI and UA, with a convective filter. |
 | **Satellite** | EUMETSAT Meteosat IR 10.8, RGB Convection, RGB Airmass and WV 6.2 (WMS). |
@@ -84,13 +90,14 @@ stormmap/routing.py    OSRM routing + zone validation/detours, offline network, 
 stormmap/demo.py       synthetic trough/warm-sector weather, radar tiles, strikes
 static/js/field.js     bicubic field rendering, isolines + H/L centres, city values, barbs
 static/js/particles.js animated wind-flow particles
+static/js/sections.js  cross-section & time–height renderer (shading, contours, barbs, terrain)
 static/js/units.js     unit preferences and conversions
 static/js/icons.js     SVG weather icons (WMO codes) and layer glyphs
 static/css/retro.css   2000s-style square, beveled black theme (loaded over app.css)
 static/                index.html, css, other js (radar, lightning, tracker, Skew-T, drawer…)
 ```
 
-API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/obs`, `/api/zones`, `/api/route`, `/api/intercept`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
+API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/obs`, `/api/xsection`, `/api/timeheight`, `/api/sounding/export`, `/api/zones`, `/api/route`, `/api/intercept`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
 
 ## Tests
 
@@ -105,6 +112,8 @@ python3 -m unittest discover -s tests -t .
 - **Tracker reflectivity is estimated.** The tracker reads reflectivity back from the colours of the radar tiles, so dBZ values are approximate (±3–5 dBZ).
 - **No-go zones are safety aids, not official boundaries.** DeepStateMap is updated about once a day and the front moves, so keep the buffer generous and always follow official restrictions, curfews and checkpoints. The polygons are rasterized to about 1 km, but the source itself can lag reality by hours to days. If the feed is unreachable and nothing is cached, the app uses a deliberately over-blocking coarse fallback (±20 km) and flags it in red. The source name and map date are shown in Chase → No-go zones. Any polygon features that weren't classified are listed in `/api/zones` → `meta.ignored_polygon_names`, so a change in the source's naming scheme gets noticed.
 - **METAR coverage is uneven.** Most Ukrainian airports have not reported since 2022, so expect few stations in Ukraine; coverage elsewhere in the region is good.
+- **Cross-sections use the API budget.** Each new section costs about 8 Open-Meteo calls per sample column, roughly 200 for the default 25 columns. Sections are cached for 30 minutes, and moving along the timeline reuses the cache.
+- **Grid-based diagnostics are only as fine as the grid.** Vorticity, advection and frontogenesis are smoothed on coarse grids. Use single-country regions for synoptic diagnosis.
 - **Grid-scale convergence is weaker than reality.** Convergence and MFC are computed from the model grid, so on coarse grids they only show broad features. Pick a single country to get a finer grid.
 - **Offline routing is approximate.** Without a reachable routing server (and in `--demo`), routes use straight links between towns and are labelled *Approximate — no road data*.
 - **Blitzortung.org data is for private, non-commercial use.** GPS in browsers requires HTTPS or `localhost`. On plain HTTP from another device, use *Set position on map*.

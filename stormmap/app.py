@@ -82,7 +82,21 @@ def route_api(path, qs):
     if path == "/api/outlook":
         return 200, "json", forecast.outlook(_q(qs, "model", "best_match"), _q(qs, "region", "ALL")), 60
     if path == "/api/sounding":
-        return 200, "json", forecast.sounding(_q(qs, "model", "best_match"), _float(qs, "lat"), _float(qs, "lon"), int(_q(qs, "hour", "0"))), 60
+        t_sfc = _float_or(qs, "t", None) if _q(qs, "t") not in (None, "") else None
+        td_sfc = _float_or(qs, "td", None) if _q(qs, "td") not in (None, "") else None
+        return 200, "json", forecast.sounding(_q(qs, "model", "best_match"), _float(qs, "lat"), _float(qs, "lon"),
+                                              int(_q(qs, "hour", "0")), t_sfc, td_sfc), 60
+    if path == "/api/sounding/export":
+        t_sfc = _float_or(qs, "t", None) if _q(qs, "t") not in (None, "") else None
+        td_sfc = _float_or(qs, "td", None) if _q(qs, "td") not in (None, "") else None
+        name, mime, text = forecast.sounding_export(_q(qs, "model", "best_match"), _float(qs, "lat"), _float(qs, "lon"),
+                                                    int(_q(qs, "hour", "0")), _q(qs, "fmt", "sharppy"), t_sfc, td_sfc)
+        return 200, mime, text.encode(), 0, {"Content-Disposition": f'attachment; filename="{name}"'}
+    if path == "/api/timeheight":
+        return 200, "json", forecast.time_height(_q(qs, "model", "best_match"), _float(qs, "lat"), _float(qs, "lon")), 60
+    if path == "/api/xsection":
+        return 200, "json", forecast.xsection(_q(qs, "model", "best_match"), _point(qs, "a"), _point(qs, "b"),
+                                              int(_q(qs, "hour", "0")), int(_float_or(qs, "n", 25))), 60
     if path == "/api/forecast":
         return 200, "json", forecast.point_forecast(_q(qs, "model", "best_match"), _float(qs, "lat"), _float(qs, "lon")), 300
     if path == "/api/meteogram":
@@ -165,8 +179,9 @@ class Handler(BaseHTTPRequestHandler):
         qs = urllib.parse.parse_qs(url.query)
         try:
             if path.startswith("/api/"):
-                status, ctype, body, cache_s = route_api(path, qs)
-                self._send(status, ctype, body, cache_s)
+                res = route_api(path, qs)
+                status, ctype, body, cache_s = res[:4]
+                self._send(status, ctype, body, cache_s, res[4] if len(res) > 4 else None)
             else:
                 self._static(path)
         except FetchError as e:

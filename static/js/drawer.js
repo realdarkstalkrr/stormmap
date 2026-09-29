@@ -62,7 +62,18 @@
       table('Kinematics', ['', 'SRH m²/s²', 'Shear kt'], kin) +
       table('Composites', null, comp) +
       table('Thermodynamics', null, thermo) +
-      table('Storm motion', null, mot);
+      table('Storm motion', null, mot) +
+      table('Advanced diagnostics', null, [
+        ['SR wind 0–2 km (m/s)', [f1(x.srw_0_2)]], ['SR wind 4–6 km (m/s)', [f1(x.srw_4_6)]],
+        ['SR wind 9–11 km (m/s)', [f1(x.srw_9_11)]], ['Supercell type', [x.supercell_type || '—']],
+        ['Critical angle (°)', [f0(x.critical_angle), x.critical_angle != null && x.critical_angle >= 70 && x.critical_angle <= 110 ? 'v-hi' : '']],
+        ['BRN', [f0(x.brn), x.brn != null && x.brn >= 10 && x.brn <= 45 ? 'v-hi' : '']], ['BRN shear (m²/s²)', [f0(x.brn_shear)]],
+        ['Craven–Brooks (m³/s³)', [x.sigsvr == null ? '—' : Math.round(x.sigsvr).toLocaleString(), cls(x.sigsvr, 20000, 50000)]],
+        ['WINDEX (kt)', [f0(x.windex), cls(x.windex, 50, 65)]], ['MCS maint. prob.', [x.mmp == null ? '—' : Math.round(x.mmp * 100) + ' %', cls(x.mmp, 0.5, 0.8)]],
+        ['Convective temp (°C)', [f1(x.conv_temp)]], ['θe deficit (K)', [f1(x.thetae_deficit), cls(x.thetae_deficit, 20, 30)]],
+        ['LR 3–6 km (°C/km)', [f1(x.lr36), cls(x.lr36, 7, 8)]], ['LR 3–8 km (°C/km)', [f1(x.lr38), cls(x.lr38, 7, 8)]],
+        ['−10 / −20 / −30 °C (m)', [`${f0(x.h_m10)} / ${f0(x.h_m20)} / ${f0(x.h_m30)}`]], ['HGZ depth (m)', [f0(x.hgz_depth)]],
+      ]);
     const hz = x.hazard;
     const hzCol = { 'PDS TOR': '#e879f9', TOR: '#f43f5e', 'MRGL TOR': '#fb7185', SVR: '#fb923c', 'MRGL SVR': '#fbbf24', 'FLASH FLOOD': '#34d399', TSTM: '#84cc16', NONE: '#8b93a7' }[hz] || '#e7eaf0';
     SM.$('#hazardBox').innerHTML = `<div style="font-size:10.5px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase">Possible hazard type</div>
@@ -72,10 +83,13 @@
   function drawSounding() {
     const d = D.data;
     if (!d) return;
-    SM.drawSkewT(SM.$('#skewt'), d, D.parcel);
+    const cmp = D.cmp && D.cmp.hour === d.hour && D.cmp.lat === d.lat && D.cmp.lon === d.lon ? D.cmp : null;
+    SM.drawSkewT(SM.$('#skewt'), d, D.parcel, cmp);
     SM.drawHodograph(SM.$('#hodo'), d);
+    SM.drawSRWind(SM.$('#srwind'), d);
     renderTable(d);
-    SM.$('#sndTime').textContent = `${SM.esc(SM.meta.models[d.model].name)} · ${SM.utcLabel(d.times[d.hour])}`;
+    SM.$('#sndTime').innerHTML = `${SM.esc(SM.meta.models[d.model].name)} · ${SM.utcLabel(d.times[d.hour])}${d.modified ? '<span class="modified-tag">MODIFIED SFC</span>' : ''}`;
+    if (D.wiFill) { SM.$('#wiT').value = d.plot.t[0]; SM.$('#wiTd').value = d.plot.td[0]; D.wiFill = false; }
   }
 
   function timeLabels(times) { return times.map(t => SM.utcLabel(t)); }
@@ -368,7 +382,8 @@
     SM.$('#dwSub').textContent = `${D.lat.toFixed(2)}°N ${D.lon.toFixed(2)}°E`;
     if (marker) marker.setLatLng([D.lat, D.lon]); else marker = L.circleMarker([D.lat, D.lon], { radius: 7, color: '#22d3ee', weight: 2, fillOpacity: 0.15, pane: 'cellPane' }).addTo(SM.map);
     if (opts.hour != null) SM.state.hour = opts.hour;
-    D.fc = null; D.fcDay = 0;
+    D.fc = null; D.fcDay = 0; D.wi = null; D.cmp = null;
+    if (D.tab === 'timeheight') SM.sections.loadTH(D.lat, D.lon);
     if (opts.tab) selectTab(opts.tab);
     loadForecast();
     await D.loadSounding();
@@ -382,9 +397,13 @@
     const model = SM.state.model;
     try {
       SM.loading('snd', 'Computing sounding analysis…');
-      const d = await SM.api('sounding', { model, lat: D.lat, lon: D.lon, hour: SM.state.hour });
+      const q = { model, lat: D.lat, lon: D.lon, hour: SM.state.hour };
+      if (D.wi) { q.t = D.wi.t; q.td = D.wi.td; }
+      const d = await SM.api('sounding', q);
       if (id !== req.snd) return;
       D.data = d;
+      if (!D.wi) D.wiFill = true;
+      if (D.cmpModel) loadCompare();
       SM.$('#dwSub').textContent = `${D.lat.toFixed(2)}°N ${D.lon.toFixed(2)}°E · ${Math.round(d.elevation || 0)} m · ${d.country || ''} · ${SM.meta.models[model].name}`;
       if (D.tab === 'sounding') drawSounding();
       if (D.tab === 'series') drawSeries();
@@ -403,6 +422,7 @@
 
   D.init = function () {
     SM.$('#dwClose').addEventListener('click', D.close);
+    D.initSoundingTools();
     SM.$$('#dwTabs button').forEach(b => b.addEventListener('click', () => selectTab(b.dataset.tab)));
     SM.$$('#parcelSeg button').forEach(b => b.addEventListener('click', () => {
       D.parcel = b.dataset.parcel;
@@ -434,5 +454,38 @@
     if (D.tab === 'series') drawSeries();
     if (D.tab === 'models') { mgPicks(); if (!D.mg || D.mg.lat !== D.lat || D.mg.lon !== D.lon) loadModels(); else drawModels(); }
     if (D.tab === 'ensemble') { ensButtons(); if (!D.ens || D.ens.lat !== D.lat || D.ens.lon !== D.lon) loadEnsemble(); else drawEnsemble(); }
+    if (D.tab === 'timeheight') {
+      const th = SM.sections.th;
+      if (!th || th.lat !== D.lat || th.lon !== D.lon || th.model !== SM.state.model) SM.sections.loadTH(D.lat, D.lon); else SM.sections.renderTH();
+    }
   }
+
+  /* ---------- sounding tools: what-if, compare overlay, export ---------- */
+  async function loadCompare() {
+    if (!D.cmpModel || D.lat == null) { D.cmp = null; return; }
+    try {
+      D.cmp = await SM.api('sounding', { model: D.cmpModel, lat: D.lat, lon: D.lon, hour: SM.state.hour });
+      if (D.tab === 'sounding') drawSounding();
+    } catch (e) { D.cmp = null; SM.toast('Compare sounding: ' + e.message, true); }
+  }
+
+  function initSoundingTools() {
+    const sel = SM.$('#sndCompare');
+    for (const [k, m] of Object.entries(SM.meta.models)) sel.appendChild(SM.el('option', { value: k }, SM.esc(m.name)));
+    sel.addEventListener('change', () => { D.cmpModel = sel.value || null; D.cmp = null; if (D.cmpModel) loadCompare(); else drawSounding(); });
+    SM.$('#wiRun').addEventListener('click', () => {
+      const t = parseFloat(SM.$('#wiT').value), td = parseFloat(SM.$('#wiTd').value);
+      if (!(t === t) || !(td === td)) { SM.toast('Enter surface T and Td (°C)', true); return; }
+      D.wi = { t, td: Math.min(td, t) };
+      D.loadSounding();
+    });
+    SM.$('#wiReset').addEventListener('click', () => { D.wi = null; D.loadSounding(); });
+    SM.$$('.snd-tools [data-exp]').forEach(b => b.addEventListener('click', () => {
+      if (!D.data) return;
+      const q = new URLSearchParams({ model: D.data.model, lat: D.lat, lon: D.lon, hour: D.data.hour, fmt: b.dataset.exp });
+      if (D.wi) { q.set('t', D.wi.t); q.set('td', D.wi.td); }
+      window.location.href = '/api/sounding/export?' + q.toString();
+    }));
+  }
+  D.initSoundingTools = initSoundingTools;
 })();

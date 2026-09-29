@@ -12,14 +12,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import config, demo
 from .derived import PARAMS, add_gradient_params, compute_point
-from .geo import build_grid, country_at, nearest_city
+from .geo import bearing, build_grid, country_at, nearest_city
 from .net import FetchError, cache, fetch_json
 from .sounding import analyze, profile_from_openmeteo
+from .thermo import dewpoint_from_rh, equiv_potential_temp_k, potential_temp_k
 
 log = logging.getLogger("stormmap.forecast")
 
-ROUND2 = {"stp", "scp", "ship", "ehi"}
-GRADIENT_KEYS = {"conv10", "mfc", "ci"}
+ROUND2 = {"stp", "scp", "ship", "ehi", "u10", "v10", "u850", "v850", "u500", "v500", "u250", "v250"}
+GRADIENT_KEYS = {"conv10", "mfc", "ci", "vort500", "tadv850", "fronto850"}
 VECTOR_KEYS = ["u10", "v10", "u850", "v850", "u500", "v500", "u250", "v250"]
 THREAT_NAMES = ["None", "Thunder", "Marginal", "Slight", "Enhanced", "Moderate"]
 
@@ -110,7 +111,7 @@ def _load_grid(model, region):
     coords = g["coords"]
     t0 = time.time()
     if config.DEMO_MODE:
-        results = demo.grid_response(coords, config.GRID_VARS)
+        results = demo.grid_response(coords, config.GRID_VARS, model)
     else:
         chunks = [coords[i:i + config.GRID_CHUNK] for i in range(0, len(coords), config.GRID_CHUNK)]
         results = [None] * len(coords)
@@ -345,7 +346,7 @@ def _load_point(model, lat, lon):
         hourly += [f"temperature_{p}hPa", f"relative_humidity_{p}hPa", f"wind_speed_{p}hPa",
                    f"wind_direction_{p}hPa", f"geopotential_height_{p}hPa"]
     if config.DEMO_MODE:
-        return demo.point_response(lat, lon, lv)
+        return demo.point_response(lat, lon, lv, model)
     params = {
         "latitude": lat, "longitude": lon, "hourly": ",".join(hourly), "models": model,
         "forecast_days": config.FORECAST_DAYS, "timezone": "GMT", "timeformat": "unixtime",
@@ -374,24 +375,173 @@ def _load_sounding(model, lat, lon):
     return {"data": data, "times": times, "series": series, "analyses": analyses}
 
 
-def sounding(model, lat, lon, hour):
+def _sounding_cache(model, lat, lon):
     _check_model(model)
     lat, lon = _check_latlon(lat, lon)
     s = cache.get_or_load(("snd", model, lat, lon), config.POINT_TTL, lambda: _load_sounding(model, lat, lon))
     if not s["analyses"]:
         raise FetchError(f"{config.MODELS[model]['name']} has no upper-air data at this point", 404)
+    return s, lat, lon
+
+
+def sounding(model, lat, lon, hour, t_sfc=None, td_sfc=None):
+    s, lat, lon = _sounding_cache(model, lat, lon)
     hour = max(0, min(int(hour), len(s["times"]) - 1))
     if hour not in s["analyses"]:
         hour = min(s["analyses"], key=lambda k: abs(k - hour))
     ix, plot = s["analyses"][hour]
+    modified = t_sfc is not None or td_sfc is not None
+    if modified:
+        prof = profile_from_openmeteo(s["data"], hour, config.PRESSURE_LEVELS_SOUNDING, t_sfc, td_sfc)
+        if prof is None:
+            raise FetchError("Cannot modify this sounding", 422)
+        ix, plot = analyze(prof)
     h = s["data"]["hourly"]
     sfc = {k: (h.get(k) or [None] * (hour + 1))[hour] for k in config.POINT_SURFACE_VARS}
     return {
         "model": model, "lat": lat, "lon": lon, "elevation": s["data"].get("elevation"),
         "place": nearest_city(lat, lon), "country": country_at(lat, lon),
         "times": s["times"], "hour": hour, "indices": ix, "plot": plot, "surface": sfc,
-        "series": s["series"],
+        "series": s["series"], "modified": modified,
     }
+
+
+def sounding_export(model, lat, lon, hour, fmt="sharppy", t_sfc=None, td_sfc=None):
+    """Sounding as SHARPpy/SPC text (%RAW% block) or CSV. Returns (filename, mime, text)."""
+    s, lat, lon = _sounding_cache(model, lat, lon)
+    hour = max(0, min(int(hour), len(s["times"]) - 1))
+    prof = profile_from_openmeteo(s["data"], hour, config.PRESSURE_LEVELS_SOUNDING, t_sfc, td_sfc)
+    if prof is None:
+        raise FetchError("No profile for this hour", 404)
+    ts = time.strftime("%y%m%d/%H%M", time.gmtime(s["times"][hour]))
+    rows = []
+    for i in range(len(prof.p)):
+        spd = math.hypot(prof.u[i], prof.v[i])
+        wdir = (math.degrees(math.atan2(-prof.u[i], -prof.v[i])) + 360) % 360 if spd > 0.01 else 0.0
+        rows.append((prof.p[i], prof.z[i], prof.t[i], prof.td[i], wdir, spd * 1.943844))
+    base = f"stormmap_{model}_{lat:.2f}_{lon:.2f}_{time.strftime('%Y%m%d%H', time.gmtime(s['times'][hour]))}"
+    if fmt == "csv":
+        lines = ["pressure_hpa,height_m_msl,temp_c,dewpoint_c,wind_dir_deg,wind_speed_kt"]
+        lines += [f"{p:.1f},{z:.0f},{t:.1f},{td:.1f},{d:.0f},{w:.1f}" for p, z, t, td, d, w in rows]
+        return base + ".csv", "text/csv; charset=utf-8", "\n".join(lines) + "\n"
+    title = f" SMAP   {ts}   {lat:.2f},{lon:.2f}   {config.MODELS[model]['name']}"
+    lines = ["%TITLE%", title, "", "   LEVEL       HGHT       TEMP       DWPT       WDIR       WSPD",
+             "-------------------------------------------------------------------", "%RAW%"]
+    lines += [f"{p:8.2f}, {z:10.2f}, {t:10.2f}, {td:10.2f}, {d:10.2f}, {w:10.2f}" for p, z, t, td, d, w in rows]
+    lines.append("%END%")
+    return base + ".txt", "text/plain; charset=utf-8", "\n".join(lines) + "\n"
+
+
+def _level_fields(h, i, levels, psfc):
+    """Per-level T, RH, wind, height, θ, θe for hour i of an Open-Meteo hourly block."""
+    out = {k: [] for k in ("t", "rh", "u", "v", "z", "theta", "thetae")}
+    for p in levels:
+        def g(name):
+            arr = h.get(f"{name}_{p}hPa")
+            return arr[i] if arr and i < len(arr) else None
+        t, rh, z, ws, wd = g("temperature"), g("relative_humidity"), g("geopotential_height"), g("wind_speed"), g("wind_direction")
+        below = psfc is not None and p > psfc
+        if None in (t, rh, z) or below:
+            for k in out:
+                out[k].append(None)
+            continue
+        u = v = None
+        if ws is not None and wd is not None:
+            u = -ws * math.sin(math.radians(wd))
+            v = -ws * math.cos(math.radians(wd))
+        td = dewpoint_from_rh(t, rh)
+        out["t"].append(round(t, 1)); out["rh"].append(round(rh)); out["z"].append(round(z))
+        out["u"].append(None if u is None else round(u, 1)); out["v"].append(None if v is None else round(v, 1))
+        out["theta"].append(round(potential_temp_k(t, p), 1))
+        out["thetae"].append(round(equiv_potential_temp_k(t, td, p), 1))
+    return out
+
+
+def time_height(model, lat, lon):
+    """Time–height section at a point from the cached sounding data."""
+    s, lat, lon = _sounding_cache(model, lat, lon)
+    h = s["data"]["hourly"]
+    levels = config.PRESSURE_LEVELS_SOUNDING
+    cols = []
+    for i in range(len(s["times"])):
+        ps = (h.get("surface_pressure") or [None] * (i + 1))[i]
+        cols.append(_level_fields(h, i, levels, ps))
+    return {"model": model, "lat": lat, "lon": lon, "place": nearest_city(lat, lon), "times": s["times"],
+            "levels": levels, "cols": cols,
+            "psfc": h.get("surface_pressure"), "precip": h.get("precipitation"), "cape": h.get("cape")}
+
+
+def _gc_points(a, b, n):
+    """n points along the great circle a→b (lat, lon in degrees)."""
+    la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    d = 2 * math.asin(math.sqrt(math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2))
+    pts = []
+    for k in range(n):
+        f = k / (n - 1)
+        if d < 1e-9:
+            pts.append(a)
+            continue
+        A = math.sin((1 - f) * d) / math.sin(d)
+        B = math.sin(f * d) / math.sin(d)
+        x = A * math.cos(la1) * math.cos(lo1) + B * math.cos(la2) * math.cos(lo2)
+        y = A * math.cos(la1) * math.sin(lo1) + B * math.cos(la2) * math.sin(lo2)
+        z = A * math.sin(la1) + B * math.sin(la2)
+        pts.append((round(math.degrees(math.atan2(z, math.hypot(x, y))), 3), round(math.degrees(math.atan2(y, x)), 3)))
+    return pts, d * 6371.0
+
+
+def _load_xsection(model, pts):
+    levels = config.PRESSURE_LEVELS_SOUNDING
+    if config.DEMO_MODE:
+        return [demo.point_response(la, lo, levels, model) for la, lo in pts]
+    hourly = ["surface_pressure"]
+    for p in levels:
+        hourly += [f"temperature_{p}hPa", f"relative_humidity_{p}hPa", f"wind_speed_{p}hPa",
+                   f"wind_direction_{p}hPa", f"geopotential_height_{p}hPa"]
+    params = {
+        "latitude": ",".join(f"{p[0]:.3f}" for p in pts), "longitude": ",".join(f"{p[1]:.3f}" for p in pts),
+        "hourly": ",".join(hourly), "models": model, "forecast_days": config.FORECAST_DAYS,
+        "timezone": "GMT", "timeformat": "unixtime", "wind_speed_unit": "ms",
+    }
+    budget.acquire(RateBudget.weight(len(pts), len(hourly)))
+    data = fetch_json(_om_url(config.OPEN_METEO_FORECAST, params), timeout=60)
+    if isinstance(data, dict):
+        if data.get("error"):
+            raise FetchError(data.get("reason", "Open-Meteo error"))
+        data = [data]
+    return data
+
+
+def xsection(model, a, b, hour, n=25):
+    """Vertical cross-section between points a and b (lat, lon)."""
+    _check_model(model)
+    a, b = _check_latlon(*a), _check_latlon(*b)
+    n = max(8, min(int(n), 40))
+    pts, length_km = _gc_points(a, b, n)
+    if length_km < 30:
+        raise FetchError("Cross-section line is too short (< 30 km)", 400)
+    if length_km > 3000:
+        raise FetchError("Cross-section line is too long (> 3000 km)", 400)
+    data = cache.get_or_load(("xs", model, a, b, n), config.POINT_TTL, lambda: _load_xsection(model, pts))
+    times = data[0].get("hourly", {}).get("time", [])
+    hour = max(0, min(int(hour), len(times) - 1))
+    levels = config.PRESSURE_LEVELS_SOUNDING
+    brg = math.radians(bearing(a[0], a[1], b[0], b[1]))
+    ax, ay = math.sin(brg), math.cos(brg)  # along-section unit vector (east, north)
+    cols, elev, psfc = [], [], []
+    for d in data:
+        h = d.get("hourly", {})
+        ps = (h.get("surface_pressure") or [None] * (hour + 1))[hour]
+        c = _level_fields(h, hour, levels, ps)
+        c["along"] = [None if (u is None or v is None) else round(u * ax + v * ay, 1) for u, v in zip(c["u"], c["v"])]
+        c["normal"] = [None if (u is None or v is None) else round(-u * ay + v * ax, 1) for u, v in zip(c["u"], c["v"])]
+        cols.append(c)
+        elev.append(d.get("elevation"))
+        psfc.append(ps)
+    return {"model": model, "a": a, "b": b, "points": pts, "length_km": round(length_km, 1),
+            "dist": [round(length_km * k / (n - 1), 1) for k in range(n)], "levels": levels, "times": times,
+            "hour": hour, "cols": cols, "elev": elev, "psfc": psfc,
+            "a_place": nearest_city(*a), "b_place": nearest_city(*b), "bearing": round(math.degrees(brg) % 360)}
 
 
 def meteogram(models, lat, lon):

@@ -26,6 +26,7 @@
     const c = U.cfg;
     switch (kind) {
       case 'temp': return c.temp === 'f' ? v * 9 / 5 + 32 : v;
+      case 'tempdiff': return c.temp === 'f' ? v * 9 / 5 : v;
       case 'wind':
         if (c.wind === 'kmh') return v * 3.6;
         if (c.wind === 'kt') return v * 1.943844;
@@ -42,7 +43,7 @@
   U.label = function (kind, fallback = '') {
     const c = U.cfg;
     switch (kind) {
-      case 'temp': return c.temp === 'f' ? '°F' : '°C';
+      case 'temp': case 'tempdiff': return c.temp === 'f' ? '°F' : '°C';
       case 'wind': return { kmh: 'km/h', ms: 'm/s', kt: 'kt', mph: 'mph', bft: 'Bft' }[c.wind];
       case 'precip': return c.precip === 'in' ? 'in/h' : 'mm/h';
       case 'pressure': return { hpa: 'hPa', inhg: 'inHg', mmhg: 'mmHg' }[c.pressure];
@@ -54,6 +55,7 @@
   function digits(kind, v) {
     if (kind === 'precip') return U.cfg.precip === 'in' ? 2 : (Math.abs(v) < 10 ? 1 : 0);
     if (kind === 'pressure') return U.cfg.pressure === 'inhg' ? 2 : 0;
+    if (kind === 'tempdiff') return 1;
     if (kind === 'temp' || kind === 'wind' || kind === 'height' || kind === 'pct') return 0;
     return Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2;
   }
@@ -65,7 +67,7 @@
     const s = x.toFixed(digits(kind, x));
     if (!withUnit) return s;
     const lab = kind === 'pct' ? '%' : U.label(kind, fallbackUnit);
-    return kind === 'temp' ? s + '°' : s + (lab ? ' ' + lab : '');
+    return kind === 'temp' || kind === 'tempdiff' ? s + '°' : s + (lab ? ' ' + lab : '');
   };
 
   /** Param helpers — `p` is an entry of SM.meta.params. */

@@ -266,10 +266,11 @@ def dcape(prof):
         if te < best:
             best, best_i = te, i
     if best_i is None:
-        return 0.0, None
+        return 0.0, None, []
     t_start = wet_bulb_c(prof.t[best_i], prof.td[best_i], prof.p[best_i])
     total = 0.0
     t_par = t_start
+    trace = [(prof.p[best_i], t_start)]
     for i in range(best_i, 0, -1):
         p_hi, p_lo = prof.p[i], prof.p[i - 1]
         t_next = moist_step(t_par, p_hi, p_lo)
@@ -277,7 +278,8 @@ def dcape(prof):
         e1 = prof.t[i - 1] + ZERO_C - (t_next + ZERO_C)
         total += RD * 0.5 * (e0 + e1) * math.log(p_lo / p_hi)
         t_par = t_next
-    return max(total, 0.0), prof.p[best_i]
+        trace.append((p_lo, t_next))
+    return max(total, 0.0), prof.p[best_i], trace
 
 
 # ----------------------------------------------------------------------------------------
@@ -474,6 +476,112 @@ def storm_mode(ix):
 # Main entry
 # ----------------------------------------------------------------------------------------
 
+def sr_profile(prof, storm, top=12000, step=250.0):
+    """Storm-relative wind speed (m/s) vs height AGL for the given storm motion."""
+    out = []
+    h = 0.0
+    while h <= top:
+        w = wind_at(prof, h)
+        if w:
+            out.append([round(h), round(math.hypot(w[0] - storm[0], w[1] - storm[1]), 1)])
+        h += step
+    return out
+
+
+def _mean_sr(prof, storm, h0, h1):
+    vals = [s for h, s in sr_profile(prof, storm, h1) if h0 <= h <= h1]
+    return sum(vals) / len(vals) if vals else None
+
+
+def _height_of_temp(prof, target):
+    for i in range(1, len(prof.p)):
+        if prof.t[i - 1] >= target > prof.t[i]:
+            f = (prof.t[i - 1] - target) / (prof.t[i - 1] - prof.t[i])
+            return prof.agl[i - 1] + f * (prof.agl[i] - prof.agl[i - 1])
+    return None
+
+
+def convective_temperature(prof, max_rise=20.0):
+    """Surface temperature needed for a surface parcel (same moisture) to convect freely (CIN > −1 J/kg)."""
+    t0, td0 = prof.t[0], prof.td[0]
+    base = lift_parcel(prof, 0, t0, td0)
+    if base["cape"] > 0 and base["cin"] > -1:
+        return t0
+    t = t0
+    while t < t0 + max_rise:
+        t += 0.5
+        pc = lift_parcel(prof, 0, t, td0)
+        if pc["cape"] > 0 and pc["cin"] > -1:
+            return t
+    return None
+
+
+def advanced_indices(prof, sb, ml, mu, rm, shr6, fzl, lapse):
+    """Research/operational extras: SR winds, critical angle, BRN, WINDEX, MMP, Tc, θe deficit, HGZ."""
+    out = {}
+    # storm-relative winds & Rasmussen–Straka supercell type (anvil-level SR wind)
+    out["srw_0_2"] = _mean_sr(prof, rm, 0, 2000)
+    out["srw_4_6"] = _mean_sr(prof, rm, 4000, 6000)
+    out["srw_9_11"] = _mean_sr(prof, rm, 9000, 11000)
+    a = out["srw_9_11"]
+    out["supercell_type"] = None if a is None else ("HP (high precipitation)" if a < 18 else "Classic" if a <= 28 else "LP (low precipitation)")
+    # critical angle (Esterheld & Giuliano 2008)
+    w0, w05 = wind_at(prof, 0), wind_at(prof, 500)
+    out["critical_angle"] = None
+    if w0 and w05:
+        s1 = (w05[0] - w0[0], w05[1] - w0[1])
+        s2 = (rm[0] - w0[0], rm[1] - w0[1])
+        n1, n2 = math.hypot(*s1), math.hypot(*s2)
+        if n1 > 0.5 and n2 > 0.5:
+            c = max(-1.0, min(1.0, (s1[0] * s2[0] + s1[1] * s2[1]) / (n1 * n2)))
+            out["critical_angle"] = math.degrees(math.acos(c))
+    # bulk Richardson number
+    m6, m05 = mean_wind(prof, 0, 6000), mean_wind(prof, 0, 500)
+    out["brn_shear"] = out["brn"] = None
+    if m6 and m05:
+        bs = 0.5 * ((m6[0] - m05[0]) ** 2 + (m6[1] - m05[1]) ** 2)
+        out["brn_shear"] = bs
+        out["brn"] = ml["cape"] / bs if bs > 0.5 else None
+    # Craven–Brooks significant-severe parameter
+    out["sigsvr"] = ml["cape"] * shr6 if shr6 is not None else None
+    # lapse rates
+    out["lr36"] = lapse(3000, 6000)
+    out["lr38"] = lapse(3000, 8000)
+    # hail-growth zone heights
+    out["h_m10"], out["h_m20"], out["h_m30"] = (_height_of_temp(prof, x) for x in (-10, -20, -30))
+    out["hgz_depth"] = (out["h_m30"] - out["h_m10"]) if (out["h_m30"] and out["h_m10"]) else None
+    # θe deficit (surface θe minus minimum θe in the lowest 400 hPa) — downburst potential
+    te_sfc = equiv_potential_temp_k(prof.t[0], prof.td[0], prof.p[0])
+    te_min = min(equiv_potential_temp_k(prof.t[i], prof.td[i], p) for i, p in enumerate(prof.p) if p >= prof.p[0] - 400)
+    out["thetae_sfc"] = te_sfc
+    out["thetae_deficit"] = te_sfc - te_min
+    # WINDEX (McCann 1994), knots
+    out["windex"] = None
+    if fzl and fzl > 500:
+        hm = fzl / 1000.0
+        ql_vals = [prof.w[i] * 1000 for i in range(len(prof.p)) if prof.agl[i] <= 1000]
+        ql = sum(ql_vals) / len(ql_vals) if ql_vals else 0
+        wm = prof.at_height(prof.w, fzl)
+        qm = (wm or 0) * 1000
+        gamma = prof.t[0] / hm
+        rq = min(ql / 12.0, 1.0)
+        x = hm * rq * (gamma * gamma - 30 + ql - 2 * qm)
+        out["windex"] = 5 * math.sqrt(x) if x > 0 else 0.0
+    # MCS maintenance probability (Coniglio et al. 2007)
+    out["mmp"] = None
+    if mu["cape"] >= 100:
+        lows = [wind_at(prof, h) for h in range(0, 1001, 250)]
+        highs = [wind_at(prof, h) for h in range(6000, 10001, 250)]
+        mx = max((math.hypot(b[0] - a_[0], b[1] - a_[1]) for a_ in lows if a_ for b in highs if b), default=None)
+        mw = mean_wind(prof, 3000, 12000)
+        lr = out["lr38"]
+        if None not in (mx, mw, lr):
+            z = 13.0 - 4.59e-2 * mx - 1.16 * lr - 6.17e-4 * mu["cape"] - 0.17 * math.hypot(*mw)
+            out["mmp"] = 1.0 / (1.0 + math.exp(z))
+    out["conv_temp"] = convective_temperature(prof)
+    return out
+
+
 def _r(x, nd=1):
     return None if x is None else round(x, nd)
 
@@ -484,7 +592,7 @@ def analyze(prof):
     ml = mixed_layer_parcel(prof)
     mu = most_unstable_parcel(prof)
     eff = effective_inflow_layer(prof, mu["cape"])
-    dc, _ = dcape(prof)
+    dc, _, dtrace = dcape(prof)
 
     storm = bunkers(prof)
     rm = storm["rm"] if storm else (0.0, 0.0)
@@ -567,6 +675,7 @@ def analyze(prof):
     mw6 = mean_wind(prof, 0, 6000)
     mw6_mag = math.hypot(*mw6) if mw6 else None
     cf = corfidi(prof)
+    adv = advanced_indices(prof, sb, ml, mu, rm, shr6, fzl, lapse)
 
     ix = {
         "sbcape": sb["cape"], "sbcin": sb["cin"], "sblcl": sb["lcl_hgt"], "sblfc": sb["lfc_hgt"], "sbel": sb["el_hgt"], "sbli": sb["li"],
@@ -580,6 +689,7 @@ def analyze(prof):
         "fzl": fzl, "wbz": wbz, "pwat": pwat, "mean_wind6": mw6_mag,
         "t500": t500, "t850": t850,
     }
+    ix.update(adv)
     mu_w = prof.w[mu["i0"]]
     ix["stp_fixed"] = stp_fixed(sb["cape"], sb["lcl_hgt"], srh1, shr6, sb["cin"])
     ix["stp_eff"] = stp_effective(ml["cape"], ml["lcl_hgt"], esrh, ebwd, ml["cin"])
@@ -608,7 +718,7 @@ def analyze(prof):
     out = {}
     for k, v in ix.items():
         if isinstance(v, float):
-            nd = 2 if k in ("stp_fixed", "stp_eff", "scp", "ship", "dcp", "ehi1", "ehi3") else 1
+            nd = 2 if k in ("stp_fixed", "stp_eff", "scp", "ship", "dcp", "ehi1", "ehi3", "mmp") else 1
             out[k] = round(v, nd)
         else:
             out[k] = v
@@ -637,12 +747,19 @@ def analyze(prof):
         },
         "eff_layer": [_r(eff[0]), _r(eff[1])] if eff else None,
         "hodograph": hodo,
+        "wetbulb": [_r(wet_bulb_c(prof.t[i], prof.td[i], prof.p[i])) if prof.p[i] >= 300 else None for i in range(len(prof.p))],
+        "downdraft": [[_r(p), _r(t)] for p, t in dtrace],
+        "srwind": sr_profile(prof, rm),
     }
     return out, plot
 
 
-def profile_from_openmeteo(data, hour_index, levels):
-    """Build a Profile for one hour from an Open-Meteo single-location response."""
+def profile_from_openmeteo(data, hour_index, levels, t_sfc=None, td_sfc=None):
+    """Build a Profile for one hour from an Open-Meteo single-location response.
+
+    t_sfc / td_sfc optionally override the surface temperature / dew point (°C) for
+    "what-if" surface-parcel modification.
+    """
     h = data.get("hourly", {})
 
     def get(name):
@@ -655,6 +772,11 @@ def profile_from_openmeteo(data, hour_index, levels):
     ws, wd = get("wind_speed_10m"), get("wind_direction_10m")
     if None in (t2, td2, ps, ws, wd):
         return None
+    if t_sfc is not None:
+        t2 = t_sfc
+    if td_sfc is not None:
+        td2 = td_sfc
+    td2 = min(td2, t2)
     u10, v10 = wind_components(ws, wd)
     sfc = {"p": ps, "t": t2, "td": td2, "u": u10, "v": v10, "elev": data.get("elevation") or 0.0}
     lv = []

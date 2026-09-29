@@ -101,6 +101,23 @@ class ServerTests(unittest.TestCase):
         for k in ("conv10", "mfc", "ci", "wmaxshear"):
             self.assertIn(k, g["available"])
 
+    def test_sections_and_export(self):
+        _, x = self.get_json("/api/xsection?model=gfs_seamless&a=49.8,24.0&b=47.2,38.5&hour=13&n=12")
+        self.assertEqual(len(x["cols"]), 12)
+        self.assertEqual(len(x["cols"][0]["thetae"]), len(x["levels"]))
+        _, th = self.get_json("/api/timeheight?model=gfs_seamless&lat=49&lon=31")
+        self.assertEqual(len(th["cols"]), len(th["times"]))
+        status, ctype, body = self.get("/api/sounding/export?model=gfs_seamless&lat=49&lon=31&hour=13&fmt=sharppy")
+        text = body.decode()
+        self.assertIn("%RAW%", text)
+        self.assertIn("%END%", text)
+        _, m = self.get_json("/api/sounding?model=gfs_seamless&lat=49&lon=31&hour=13&t=35&td=20")
+        self.assertTrue(m["modified"])
+        self.assertEqual(m["plot"]["t"][0], 35.0)
+        _, g = self.get_json("/api/grid?model=gfs_seamless&region=PL&hour=14")
+        for k in ("vort500", "tadv850", "fronto850"):
+            self.assertIn(k, g["available"])
+
     def test_bad_requests(self):
         for path, code in [("/api/grid?model=nope", 400), ("/api/sounding?lat=x&lon=1", 400),
                            ("/api/radar/tile/5/1/1.png?path=/etc/passwd", 400), ("/api/unknown", 404),

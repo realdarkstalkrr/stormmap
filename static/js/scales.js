@@ -47,6 +47,9 @@
     conv10: S([[0.03, '#10233a', 0], [0.08, '#1d4f73', .55], [0.15, '#1c8a8a'], [0.3, '#b8d44a'], [0.5, '#f2c14e'], [0.8, '#f08a3c'], [1.2, '#e5533d'], [2, '#e879f9']]),
     mfc: S([[0.03, '#10233a', 0], [0.08, '#1d4f73', .55], [0.15, '#1c8a8a'], [0.3, '#b8d44a'], [0.5, '#f2c14e'], [0.8, '#f08a3c'], [1.2, '#e5533d'], [2, '#e879f9']]),
     ci: S([[5, '#10233a', 0], [12, '#1d4f73', .6], [25, '#1c8a8a'], [40, '#b8d44a'], [55, '#f2c14e'], [70, '#f08a3c'], [85, '#e5533d'], [100, '#e879f9']]),
+    vort500: S([[8, '#10233a', 0], [11, '#1d4f73', .45], [14, '#1c8a8a', .75], [17, '#b8d44a'], [20, '#f2c14e'], [24, '#f08a3c'], [28, '#e5533d'], [34, '#e879f9']]),
+    tadv850: S([[-4, '#1e40af'], [-2, '#3b82f6'], [-0.8, '#93c5fd', .6], [-0.25, '#dbeafe', 0], [0.25, '#fee2e2', 0], [0.8, '#fca5a5', .6], [2, '#ef4444'], [4, '#991b1b']]),
+    fronto850: S([[0.2, '#10233a', 0], [0.5, '#1d4f73', .6], [1, '#1c8a8a'], [2, '#b8d44a'], [3, '#f2c14e'], [5, '#f08a3c'], [8, '#e879f9']]),
     lpi: S([[0.2, '#fef9c3', 0], [1, '#fde047', .6], [3, '#facc15'], [6, '#fb923c'], [10, '#ef4444'], [20, '#e879f9']]),
   };
   SM.THREAT_COLORS = THREAT;
@@ -110,6 +113,7 @@
     ['Upper air', ['t850', 't500', 'wind850', 'wind500', 'wind250', 'z500', 'theta_e', 'fzl']],
     ['Storm composites', ['threat', 'stp', 'scp', 'ship', 'wmaxshear', 'ehi']],
     ['Initiation', ['ci', 'conv10', 'mfc']],
+    ['Synoptic diagnostics', ['vort500', 'tadv850', 'fronto850']],
     ['Instability', ['cape', 'li', 'cin', 'lr75', 'lcl', 'kindex', 'tt', 'lpi']],
     ['Wind shear', ['shr6', 'shr1', 'srh3', 'srh1']],
   ];
@@ -126,6 +130,7 @@
     ['cape', 'CAPE', 'bolt', [['CAPE', 'cape'], ['Lifted index', 'li'], ['CIN', 'cin']]],
     ['storm', 'Storms', 'storm', [['Threat', 'threat'], ['STP', 'stp'], ['SCP', 'scp'], ['SHIP', 'ship'], ['WMAXSHEAR', 'wmaxshear']]],
     ['init', 'Initiation', 'target', [['Potential', 'ci'], ['Convergence', 'conv10'], ['Moisture flux', 'mfc']]],
+    ['synop', 'Synoptic', 'pressure', [['500 hPa vorticity', 'vort500'], ['850 T-advection', 'tadv850'], ['850 frontogenesis', 'fronto850'], ['500 hPa height', 'z500']]],
     ['shear', 'Shear', 'shear', [['0–6 km', 'shr6'], ['0–1 km', 'shr1'], ['SRH 0–1', 'srh1'], ['SRH 0–3', 'srh3']]],
   ];
   // Wind level shown by the particle animation for each parameter

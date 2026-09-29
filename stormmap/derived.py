@@ -56,6 +56,9 @@ PARAMS = {
     "wmaxshear": ("WMAXSHEAR", "m²/s²", "√(2·CAPE) × 0–6 km shear (ESSL/Taszarek severe discriminator; >500 severe, >1000 significant)", "none"),
     "conv10": ("Surface convergence", "10⁻⁵ s⁻¹", "10 m wind convergence — boundaries where storms initiate (grid-scale)", "none"),
     "mfc": ("Moisture-flux convergence", "g/kg/h", "Surface moisture-flux convergence — favoured initiation zones", "none"),
+    "vort500": ("Vorticity 500 hPa", "10⁻⁵ s⁻¹", "Absolute vorticity at 500 hPa — shortwave troughs and PVA", "none"),
+    "tadv850": ("Temp. advection 850 hPa", "K/3h", "Horizontal temperature advection at 850 hPa (warm > 0, cold < 0)", "none"),
+    "fronto850": ("Frontogenesis 850 hPa", "K/100km/3h", "2-D kinematic (Petterssen) frontogenesis of θ at 850 hPa", "none"),
     "ci": ("Initiation potential", "%", "Chance-style index for storm initiation: CAPE, weak CIN and surface convergence", "pct"),
 }
 
@@ -229,20 +232,32 @@ def compute_point(h, i, elevation=0.0):
 
 
 def add_gradient_params(cols, grid, idx):
-    """Grid-based kinematic fields for one hour (in place): surface convergence,
-    moisture-flux convergence and the initiation-potential index.
+    """Grid-based kinematic fields for one hour (in place).
+
+    Surface convergence, moisture-flux convergence, initiation potential, 500 hPa absolute
+    vorticity, 850 hPa temperature advection and 850 hPa 2-D Petterssen frontogenesis.
+    Centred differences on the model grid (one-sided at the edges of the data mask).
 
     cols: {param: [values per point]}; grid: dict(step, lat0, nlat, nlon); idx: flat grid index per point.
     """
     n, nlon, step = len(idx), grid["nlon"], grid["step"]
     pos = {k: p for p, k in enumerate(idx)}
-    u, v, q = cols.get("u10"), cols.get("v10"), cols.get("q2")
-    conv, mfc, ci = [None] * n, [None] * n, [None] * n
-    r_earth = 6371000.0
+    g = cols.get
+
+    def prod(a, b):
+        if a is None or b is None:
+            return None
+        return [None if (x is None or y is None) else x * y for x, y in zip(a, b)]
+
+    u, v, q = g("u10"), g("v10"), g("q2")
+    qu, qv = prod(q, u), prod(q, v)
+    u8, v8, u5, v5, t8 = g("u850"), g("v850"), g("u500"), g("v500"), g("t850")
+    th8 = None if t8 is None else [None if t is None else (t + 273.15) * (1000.0 / 850.0) ** 0.2857 for t in t8]
+    out = {k: [None] * n for k in ("conv10", "mfc", "ci", "vort500", "tadv850", "fronto850")}
+    r_earth, omega = 6371000.0, 7.2921e-5
     dy = math.radians(step) * r_earth
+
     for p, k in enumerate(idx):
-        if u is None or u[p] is None or v[p] is None:
-            continue
         iy, ix = divmod(k, nlon)
         lat = grid["lat0"] + iy * step
         dx = math.radians(step) * r_earth * math.cos(math.radians(lat))
@@ -252,42 +267,55 @@ def add_gradient_params(cols, grid, idx):
 
         e, w, nn, s = nb(1, 0), nb(-1, 0), nb(0, 1), nb(0, -1)
 
-        def ddx(arr):
-            a = arr[e] if e is not None else None
-            b = arr[w] if w is not None else None
+        def deriv(arr, fwd, back, dist):
+            if arr is None:
+                return None
+            a = arr[fwd] if fwd is not None else None
+            b = arr[back] if back is not None else None
+            c = arr[p]
             if a is not None and b is not None:
-                return (a - b) / (2 * dx)
+                return (a - b) / (2 * dist)
+            if c is None:
+                return None
             if a is not None:
-                return (a - arr[p]) / dx
+                return (a - c) / dist
             if b is not None:
-                return (arr[p] - b) / dx
+                return (c - b) / dist
             return None
 
-        def ddy(arr):
-            a = arr[nn] if nn is not None else None
-            b = arr[s] if s is not None else None
-            if a is not None and b is not None:
-                return (a - b) / (2 * dy)
-            if a is not None:
-                return (a - arr[p]) / dy
-            if b is not None:
-                return (arr[p] - b) / dy
-            return None
+        ddx = lambda arr: deriv(arr, e, w, dx)  # noqa: E731
+        ddy = lambda arr: deriv(arr, nn, s, dy)  # noqa: E731
 
+        # --- surface convergence, moisture-flux convergence, initiation potential
         dudx, dvdy = ddx(u), ddy(v)
-        if dudx is None or dvdy is None:
-            continue
-        div = dudx + dvdy
-        conv[p] = round(-div * 1e5, 2)
-        if q is not None and q[p] is not None:
-            qu = [None if (a is None or b is None) else a * b for a, b in zip(q, u)]
-            qv = [None if (a is None or b is None) else a * b for a, b in zip(q, v)]
+        if dudx is not None and dvdy is not None:
+            conv = -(dudx + dvdy) * 1e5
+            out["conv10"][p] = round(conv, 2)
             dqu, dqv = ddx(qu), ddy(qv)
             if dqu is not None and dqv is not None:
-                mfc[p] = round(-(dqu + dqv) * 3600, 2)
-        cape, cin = cols["cape"][p] or 0, cols["cin"][p] or 0
-        f_cape = min(1.0, cape / 1000.0)
-        f_cin = max(0.0, min(1.0, 1 + cin / 150.0))
-        f_conv = max(0.0, min(1.0, 0.35 + conv[p] / 2.0))
-        ci[p] = round(100 * f_cape * f_cin * f_conv)
-    cols["conv10"], cols["mfc"], cols["ci"] = conv, mfc, ci
+                out["mfc"][p] = round(-(dqu + dqv) * 3600, 2)
+            cape, cin = (g("cape") or [0] * n)[p] or 0, (g("cin") or [0] * n)[p] or 0
+            f_cape = min(1.0, cape / 1000.0)
+            f_cin = max(0.0, min(1.0, 1 + cin / 150.0))
+            f_conv = max(0.0, min(1.0, 0.35 + conv / 2.0))
+            out["ci"][p] = round(100 * f_cape * f_cin * f_conv)
+
+        # --- 500 hPa absolute vorticity (1e-5 s-1)
+        dv5dx, du5dy = ddx(v5), ddy(u5)
+        if dv5dx is not None and du5dy is not None:
+            f = 2 * omega * math.sin(math.radians(lat))
+            out["vort500"][p] = round((dv5dx - du5dy + f) * 1e5, 1)
+
+        # --- 850 hPa temperature advection (K / 3 h) and Petterssen frontogenesis
+        if th8 is not None and u8 is not None and u8[p] is not None and v8[p] is not None:
+            dtx, dty = ddx(t8), ddy(t8)
+            if dtx is not None and dty is not None:
+                out["tadv850"][p] = round(-(u8[p] * dtx + v8[p] * dty) * 10800, 2)
+            ttx, tty = ddx(th8), ddy(th8)
+            du8x, du8y, dv8x, dv8y = ddx(u8), ddy(u8), ddx(v8), ddy(v8)
+            if None not in (ttx, tty, du8x, du8y, dv8x, dv8y):
+                grad = math.hypot(ttx, tty)
+                if grad > 1e-9:
+                    fg = -(ttx * ttx * du8x + ttx * tty * (dv8x + du8y) + tty * tty * dv8y) / grad
+                    out["fronto850"][p] = round(fg * 1e5 * 10800, 2)  # K / 100 km / 3 h
+    cols.update(out)

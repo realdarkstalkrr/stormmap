@@ -96,12 +96,14 @@ def _times(days=3):
     return [s + i * HOUR for i in range(24 * days)]
 
 
-def grid_response(coords, variables):
+def grid_response(coords, variables, model="best_match"):
     times = _times()
     out = []
+    # each demo "model" is the same synthetic atmosphere, shifted slightly in space and time
+    dlat, dlon, dt = _model_offset(model)
     for lat, lon in coords:
         hourly = {"time": times}
-        rows = [_field(lat, lon, t) for t in times]
+        rows = [_field(lat + dlat, lon + dlon, t + dt) for t in times]
         for k in variables:
             hourly[k] = [r.get(k) for r in rows]
         out.append({"latitude": lat, "longitude": lon, "elevation": 150.0, "hourly": hourly})
@@ -145,10 +147,16 @@ def _level_values(f, p):
     return {"t": round(t, 1), "rh": round(rh), "z": round(max(z, zs + 30)), "spd": round(spd, 1), "dir": round(d % 360)}
 
 
-def point_response(lat, lon, levels):
+def _model_offset(model):
+    k = sum(map(ord, model)) % 7 if model and model != "best_match" else 3
+    return 0.25 * (k - 3) / 3, 0.4 * (k - 3) / 3, (k - 3) * 1200
+
+
+def point_response(lat, lon, levels, model="best_match"):
     times = _times()
     hourly = {"time": times}
-    rows = [_field(lat, lon, t) for t in times]
+    dlat, dlon, dt = _model_offset(model)
+    rows = [_field(lat + dlat, lon + dlon, t + dt) for t in times]
     for k in rows[0]:
         if not k.startswith("_"):
             hourly[k] = [r[k] for r in rows]

@@ -25,7 +25,7 @@
     return { ctx, W: r.width, H: r.height };
   }
 
-  SM.drawSkewT = function (canvas, d, parcelKey = 'ml') {
+  SM.drawSkewT = function (canvas, d, parcelKey = 'ml', compare = null) {
     const { ctx, W, H } = setup(canvas);
     ctx.fillStyle = '#05070a'; ctx.fillRect(0, 0, W, H);
     const m = { l: 44, r: 70, t: 14, b: 26 };
@@ -98,10 +98,18 @@
       }
       line(pc.t.map((t, k) => [t, P.p[pc.i0 + k]]), '#f8fafc', 1.6, [6, 4]);
     }
+    // comparison model (thin dashed)
+    if (compare && compare.plot) {
+      const C = compare.plot;
+      line(C.td.map((t, i) => [t, C.p[i]]), 'rgba(110,231,183,.8)', 1.4, [5, 4]);
+      line(C.t.map((t, i) => [t, C.p[i]]), 'rgba(251,146,160,.85)', 1.4, [5, 4]);
+    }
+    // downdraft parcel and wet-bulb profile
+    if (P.downdraft && P.downdraft.length > 1) line(P.downdraft.map(([p, t]) => [t, p]), '#c084fc', 1.5, [3, 3]);
+    if (P.wetbulb) line(P.wetbulb.map((t, i) => [t, P.p[i]]), '#38bdf8', 1.1);
     // environment
     line(P.td.map((t, i) => [t, P.p[i]]), '#34d399', 2.6);
     line(P.t.map((t, i) => [t, P.p[i]]), '#f43f5e', 2.6);
-    // wet-bulb-ish: virtual temp skipped for clarity
     ctx.restore();
 
     // axes labels
@@ -153,7 +161,8 @@
     ctx.strokeStyle = '#252b3a'; ctx.lineWidth = 1; ctx.strokeRect(m.l, m.t, pw, ph);
     // legend
     ctx.font = '10px JetBrains Mono, monospace'; ctx.textAlign = 'left';
-    const lg = [['T', '#f43f5e'], ['Td', '#34d399'], [parcelKey.toUpperCase() + ' parcel', '#f8fafc']];
+    const lg = [['T', '#f43f5e'], ['Td', '#34d399'], ['Tw', '#38bdf8'], [parcelKey.toUpperCase() + ' parcel', '#f8fafc'], ['Downdraft', '#c084fc']];
+    if (compare) lg.push([SM.meta.models[compare.model] ? SM.meta.models[compare.model].name.split(' ').slice(0, 2).join(' ') : 'compare', 'rgba(251,146,160,.85)']);
     let lx = m.l + 8;
     for (const [lab, col] of lg) { ctx.fillStyle = col; ctx.fillRect(lx, m.t + 8, 10, 3); ctx.fillStyle = '#8b93a7'; ctx.fillText(lab, lx + 14, m.t + 12); lx += ctx.measureText(lab).width + 30; }
   };
@@ -226,5 +235,29 @@
       if (mot.bunkers_lm) ctx.fillText(`LM ${mot.bunkers_lm.dir}°/${Math.round(mot.bunkers_lm.spd * 1.944)} kt`, W - 10, H - 10);
       ctx.textAlign = 'left';
     }
+  };
+
+  /** Storm-relative wind speed vs height (Bunkers right mover). */
+  SM.drawSRWind = function (canvas, d) {
+    const { ctx, W, H } = setup(canvas);
+    ctx.fillStyle = '#05070a'; ctx.fillRect(0, 0, W, H);
+    const prof = d.plot.srwind || [];
+    if (!prof.length) return;
+    const m = { l: 34, r: 10, t: 18, b: 20 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const maxS = Math.max(40, ...prof.map(x => x[1]));
+    const X = s => m.l + s / maxS * pw, Y = h => m.t + ph - h / 12000 * ph;
+    // Rasmussen–Straka anvil-level bands (9–11 km)
+    ctx.fillStyle = 'rgba(56,189,248,.08)'; ctx.fillRect(X(0), Y(11000), X(18) - X(0), Y(9000) - Y(11000));
+    ctx.fillStyle = 'rgba(52,211,153,.08)'; ctx.fillRect(X(18), Y(11000), X(28) - X(18), Y(9000) - Y(11000));
+    ctx.fillStyle = 'rgba(251,191,36,.08)'; ctx.fillRect(X(28), Y(11000), X(maxS) - X(28), Y(9000) - Y(11000));
+    ctx.strokeStyle = '#1c2230'; ctx.lineWidth = 1;
+    ctx.font = '9.5px Lucida Console, monospace'; ctx.fillStyle = '#6b7280';
+    for (let h = 0; h <= 12000; h += 3000) { ctx.beginPath(); ctx.moveTo(m.l, Y(h)); ctx.lineTo(m.l + pw, Y(h)); ctx.stroke(); ctx.fillText(h / 1000 + 'km', 2, Y(h) + 3); }
+    for (let s = 0; s <= maxS; s += 10) { ctx.beginPath(); ctx.moveTo(X(s), m.t); ctx.lineTo(X(s), m.t + ph); ctx.stroke(); ctx.fillText(s, X(s) - 5, H - 6); }
+    ctx.strokeStyle = '#f43f5e'; ctx.lineWidth = 2; ctx.beginPath();
+    prof.forEach(([h, s], i) => { if (i) ctx.lineTo(X(s), Y(h)); else ctx.moveTo(X(s), Y(h)); });
+    ctx.stroke();
+    ctx.fillStyle = '#e2e2e2'; ctx.font = 'bold 10px Tahoma, Verdana, sans-serif';
+    ctx.fillText('Storm-relative wind (m/s) · HP / Classic / LP bands at 9–11 km', m.l, 12);
   };
 })();

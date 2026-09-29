@@ -80,6 +80,10 @@
           <label class="toggle"><input type="checkbox" id="lyrValues" checked><span></span>Values at cities</label>
         </div>
         <div class="row">
+          <span class="row-label">Model difference</span>
+          <select id="diffSel" class="mini"><option value="">Off</option></select>
+        </div>
+        <div class="row">
           <span class="row-label">Isolines</span>
           <select id="isoSel" class="mini"><option value="auto">Auto</option><option value="mslp">Isobars (MSLP)</option><option value="z500">500 hPa height</option><option value="none">None</option></select>
         </div>
@@ -244,6 +248,12 @@
     <div id="layerBar" class="layer-bar"></div>
     <div id="levelPop" class="level-pop" hidden></div>
     <div id="modelBadge" class="model-badge"></div>
+    <div id="xsWin" class="xs-win" hidden>
+      <div class="xs-head"><b>Vertical cross-section</b>
+        <div class="seg small" id="xsFields"><button data-f="thetae" class="active">θe · RH</button><button data-f="temp">T · θ</button><button data-f="wind">Isotachs</button><button data-f="normal">Normal wind</button></div>
+        <button class="icon-btn" id="xsClose" title="Close">✕</button></div>
+      <canvas id="xsCanvas"></canvas>
+    </div>
     <div id="legend" class="legend"></div>
     <div id="toast" class="toast" hidden></div>
     <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">Loading…</span></div>
@@ -280,6 +290,7 @@
         <button data-tab="forecast" class="active">Forecast</button>
         <button data-tab="sounding">Sounding</button>
         <button data-tab="series">Parameters</button>
+        <button data-tab="timeheight">Time–height</button>
         <button data-tab="models">Models</button>
         <button data-tab="ensemble">Ensemble</button>
       </div>
@@ -304,11 +315,24 @@
             </div>
           </div>
           <div class="snd-side">
+            <div class="snd-tools">
+              <div class="tool-row"><b>What-if surface</b>
+                <label>T <input type="number" id="wiT" step="0.5"></label>
+                <label>Td <input type="number" id="wiTd" step="0.5"></label>
+                <button class="btn" id="wiRun">Recompute</button><button class="btn" id="wiReset">Reset</button></div>
+              <div class="tool-row"><b>Overlay</b><select id="sndCompare" class="mini"><option value="">— compare model —</option></select>
+                <b style="margin-left:auto">Export</b><button class="btn" data-exp="sharppy">SHARPpy</button><button class="btn" data-exp="csv">CSV</button></div>
+            </div>
             <canvas id="hodo"></canvas>
+            <canvas id="srwind"></canvas>
             <div id="hazardBox" class="hazard"></div>
           </div>
           <div class="snd-table" id="sndTable"></div>
         </div>
+      </div>
+      <div class="tab" data-tab="timeheight">
+        <div class="seg small" id="thFields"><button data-f="rh" class="active">RH · T · θe</button><button data-f="wind">Isotachs · θ</button></div>
+        <div class="chart-box xl"><canvas id="thCanvas"></canvas></div>
       </div>
       <div class="tab" data-tab="series"><div class="chart-box"><canvas id="seriesChart"></canvas></div><div class="chart-box"><canvas id="seriesChart2"></canvas></div></div>
       <div class="tab" data-tab="models">
@@ -347,6 +371,7 @@
 <script src="js/alerts.js"></script>
 <script src="js/chaselog.js"></script>
 <script src="js/tools.js"></script>
+<script src="js/sections.js"></script>
 <script src="js/ranking.js"></script>
 <script src="js/skewt.js"></script>
 <script src="js/drawer.js"></script>
