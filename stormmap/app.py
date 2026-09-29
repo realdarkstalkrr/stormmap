@@ -11,7 +11,7 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, config, demo, forecast, routing, sources, zones
+from . import __version__, airalerts, config, demo, forecast, hazards, publish, routing, sources, zones
 from .derived import PARAMS
 from .net import FetchError
 
@@ -19,6 +19,7 @@ log = logging.getLogger("stormmap.http")
 
 mimetypes.add_type("application/geo+json", ".geojson")
 mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 def _meta():
@@ -127,6 +128,16 @@ def route_api(path, qs):
         return 200, "json", routing.intercept(o, cell, _float_or(qs, "front", zones.DEFAULT_FRONT_KM),
                                               _float_or(qs, "border", zones.DEFAULT_BORDER_KM), _float_or(qs, "speed", 80),
                                               mode if mode in ("flank", "track") else "flank"), 0
+    if path == "/api/airalerts":
+        return 200, "json", airalerts.active(), 0
+    if path == "/api/oblasts":
+        return 200, "json", airalerts.oblasts(), 3600
+    if path == "/api/hazards":
+        return 200, "json", hazards.load(), 600
+    if path == "/api/warn/active":
+        return 200, "json", {"warnings": publish.active_warnings()}, 0
+    if path == "/api/warn/status":
+        return 200, "json", publish.status(), 0
     if path == "/api/obs":
         return 200, "json", sources.observations(), 120
     if path == "/api/warnings":
@@ -140,12 +151,30 @@ def route_api(path, qs):
     raise FetchError("Not found", 404)
 
 
+def route_post(path, body, headers):
+    token = headers.get("X-Admin-Token", "")
+    if path in ("/api/warn/publish", "/api/warn/cancel"):
+        if not publish.admin_ok(token):
+            raise FetchError("Publishing requires a valid admin token (STORMMAP_ADMIN_TOKEN)", 403)
+        if path == "/api/warn/publish":
+            return 200, "json", publish.publish(body), 0
+        return 200, "json", publish.cancel(str(body.get("id", ""))), 0
+    raise FetchError("Not found", 404)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = f"StormMap/{__version__}"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
         log.debug("%s - %s", self.address_string(), fmt % args)
+
+    def setup(self):
+        if hasattr(self.request, "do_handshake"):  # TLS: handshake off the accept thread
+            self.request.settimeout(15)
+            self.request.do_handshake()
+            self.request.settimeout(None)
+        super().setup()
 
     def _send(self, status, ctype, body, cache_s=0, extra=None):
         if ctype == "json":
@@ -168,6 +197,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    def do_POST(self):
+        path = urllib.parse.urlsplit(self.path).path
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > publish.MAX_BODY:
+                raise FetchError("Request body too large", 413)
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except ValueError:
+                raise FetchError("Body must be JSON", 400)
+            if not isinstance(body, dict):
+                raise FetchError("Body must be a JSON object", 400)
+            status, ctype, out, cache_s = route_post(path, body, self.headers)
+            self._send(status, ctype, out, cache_s)
+        except FetchError as e:
+            self._send(e.status if 400 <= e.status < 600 else 502, "json", {"error": str(e)})
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception as e:  # noqa: BLE001
+            log.error("unhandled POST error for %s\n%s", self.path, traceback.format_exc())
+            self._send(500, "json", {"error": f"Internal error: {type(e).__name__}"})
 
     def do_HEAD(self):
         self.do_GET()
@@ -215,7 +266,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             target = root / "index.html"  # SPA fallback
         ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-        if ctype.startswith("text/") or ctype in ("application/json", "application/geo+json", "image/svg+xml"):
+        if ctype.startswith("text/") or ctype in ("application/json", "application/geo+json", "application/manifest+json", "image/svg+xml"):
             ctype += "; charset=utf-8"
         cache_s = 3600 if "/vendor/" in path or "/data/" in path else 0
         self._send(200, ctype, target.read_bytes(), cache_s)
@@ -226,7 +277,21 @@ def serve(host=None, port=None):
     port = port or config.PORT
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
+    scheme = "http"
+    if config.TLS_CERT and config.TLS_KEY:
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.load_cert_chain(config.TLS_CERT, config.TLS_KEY)
+
+        def get_request():  # wrap per connection; the handshake runs in the handler thread (Handler.setup)
+            sock, addr = httpd.socket.accept()
+            return ctx.wrap_socket(sock, server_side=True, do_handshake_on_connect=False), addr
+        httpd.get_request = get_request
+        httpd.handle_error = lambda request, addr: log.debug("connection error from %s", addr, exc_info=True)
+        scheme = "https"
     zones.warm()
+    publish.start_bot()
     if config.WARM_CACHE and not config.DEMO_MODE:
         def warm():
             try:
@@ -235,7 +300,7 @@ def serve(host=None, port=None):
                 log.warning("cache warm-up failed: %s", e)
         threading.Thread(target=warm, name="warm-cache", daemon=True).start()
     shown = "localhost" if host in ("0.0.0.0", "") else host
-    log.info("StormMap %s listening on http://%s:%d%s", __version__, shown, port, "  [DEMO MODE]" if config.DEMO_MODE else "")
+    log.info("StormMap %s listening on %s://%s:%d%s", __version__, scheme, shown, port, "  [DEMO MODE]" if config.DEMO_MODE else "")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

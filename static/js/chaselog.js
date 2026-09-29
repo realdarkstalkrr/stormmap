@@ -81,8 +81,10 @@
         <button class="btn" data-exp="gpx">Export GPX</button>
         <button class="btn" data-exp="geojson">GeoJSON</button>
         <button class="btn" data-exp="csv">ESWD CSV</button>
+        <button class="btn" data-exp="public" title="Coarse locations and times, no GPS track — for posting on social media">Share-safe text</button>
         <button class="btn" id="logClear">Clear log</button>
       </div>
+      <p class="hint">⚠ Martial law: never post exact locations, times or photos showing infrastructure, military vehicles, air defence or impact sites. <b>Share-safe text</b> keeps only the settlement name, a ~10 km grid and the hour; the precise log (GPX/GeoJSON/CSV) is for ESWD and your own records.</p>
       <p class="hint">Submit significant reports (tornado, hail ≥ 2 cm, damaging wind) to the European Severe Weather Database: <a href="https://eswd.eu" target="_blank" rel="noopener">eswd.eu</a>.</p>`;
     SM.$('#recBtn').onclick = () => { log.recording = !log.recording; save(); render(); if (log.recording && !(SM.chase && SM.chase.watch != null)) SM.toast('Recording armed — press "Track my GPS" to start collecting points'); };
     box.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => G.addReport(b.dataset.rep));
@@ -101,8 +103,29 @@
   const iso = t => new Date(t * 1000).toISOString();
   const xml = s => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 
+  /** Public-safe summary: settlement names, ~0.1° grid, times rounded to the hour, no track. */
+  G.publicText = function () {
+    const coarse = v => (Math.round(v * 10) / 10).toFixed(1);
+    const hour = t => { const d = new Date(Math.floor(t / 3600) * 3600 * 1000); return d.toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Kyiv' }); };
+    const lines = log.reports.filter(r => r.type !== 'note').map(r => {
+      const place = SM.nearestCity(r.lat, r.lon);
+      const where = place.dist != null && place.dist < 25 ? `near ${place.name}` : `~${coarse(r.lat)}°N ${coarse(r.lon)}°E`;
+      return `${TYPES[r.type][1]} ${TYPES[r.type][0]}${r.value ? ' ' + r.value + ' ' + r.unit : ''} — ${where}, ~${hour(r.t)} (Kyiv)`;
+    });
+    return lines.length ? `Storm reports (approximate location and time):\n${lines.join('\n')}` : '';
+  };
+
   G.export = function (fmt) {
     const stamp = new Date().toISOString().slice(0, 10);
+    if (fmt === 'public') {
+      const txt = G.publicText();
+      if (!txt) { SM.toast('No reports to share yet', true); return; }
+      if (!confirm('Share-safe text removes your track and coarsens places/times. Still check that nothing reveals troops, air defence, infrastructure or impact sites before posting. Copy it?')) return;
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject(new Error('no clipboard')))
+        .then(() => SM.toast('Share-safe text copied'))
+        .catch(() => download(`chase-public-${stamp}.txt`, 'text/plain', txt));
+      return;
+    }
     if (fmt === 'gpx') {
       const wpts = log.reports.map(r => `  <wpt lat="${r.lat}" lon="${r.lon}"><time>${iso(r.t)}</time><name>${xml(TYPES[r.type][0])}${r.value ? ' ' + r.value + ' ' + r.unit : ''}</name><desc>${xml(r.note || '')}</desc></wpt>`).join('\n');
       const trk = log.track.map(p => `      <trkpt lat="${p[0]}" lon="${p[1]}"><time>${iso(p[2])}</time></trkpt>`).join('\n');

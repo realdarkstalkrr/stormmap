@@ -6,6 +6,8 @@
   <title>StormMap</title>
   <meta name="description" content="Convective weather analysis and live storm tracking for Eastern & Central Europe">
   <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23050608'/%3E%3Cpath d='M18 3 7 18h7l-2 11 11-16h-7z' fill='%2322d3ee'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="css/app.css">
@@ -19,6 +21,7 @@
       <svg viewBox="0 0 24 24" class="brand-bolt" aria-hidden="true"><path d="M13.5 2 4 14h6l-1.5 8L18 10h-6z"/></svg>
       <span class="brand-name">STORM<b>MAP</b></span>
       <span class="brand-tag" id="demoTag" hidden>DEMO</span>
+      <span class="brand-tag off" id="offlineTag" hidden title="No connection — showing cached data">OFFLINE</span>
     </div>
     <div class="top-controls">
       <label class="sel">
@@ -41,6 +44,7 @@
         <span class="pill" id="stLightning" title="Lightning feed"><i></i>Lightning</span>
         <span class="pill" id="stTracker" title="Cell tracker"><i></i>Tracker</span>
         <span class="pill" id="stZones" title="No-go zones"><i></i>Zones</span>
+        <span class="pill" id="stAir" title="Air-raid alerts"><i></i>Air-raid</span>
       </div>
       <div class="clock"><span id="clockUtc">--:--</span><small>UTC</small></div>
       <button class="icon-btn gear" id="settingsBtn" title="Units & settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
@@ -117,6 +121,12 @@
           <label class="toggle"><input type="checkbox" id="lyrZones" checked><span></span>No-go zones (occupied UA)</label>
         </div>
         <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrAir" checked><span></span>Air-raid alerts (UA oblasts)</label>
+        </div>
+        <div class="row">
+          <label class="toggle"><input type="checkbox" id="lyrMines" checked><span></span>Mine-contamination areas</label>
+        </div>
+        <div class="row">
           <label class="toggle"><input type="checkbox" id="lyrObs"><span></span>Surface observations (METAR)</label>
         </div>
         <div class="row">
@@ -131,6 +141,7 @@
         <button data-base="roads">Roads</button>
         <button data-base="sat">Imagery</button>
       </div>
+      <div class="offline-ctl"><button class="btn" id="offlineSave" title="Store map tiles and safety layers for this view so the app keeps working without signal">Save this area offline</button><span id="offlineInfo" class="mini-note"></span></div>
 
       <h3>Model parameter</h3>
       <div id="paramList" class="param-list"></div>
@@ -175,7 +186,13 @@
 
     <!-- Warnings -->
     <section class="pane" data-pane="warnings">
-      <h2>Official warnings</h2>
+      <h2>Warnings</h2>
+      <h3>Air-raid alerts · Ukraine</h3>
+      <div id="airList" class="air-list"><p class="hint">Loading…</p></div>
+      <h3>StormMap storm warnings</h3>
+      <p class="hint">Storm-based polygons issued by a human from a tracked cell (Ranking → <b>Issue warning</b>). Unofficial — they never replace Ukrhydrometcenter / SES warnings.</p>
+      <div id="swList" class="warn-list"></div>
+      <h3>Official weather warnings</h3>
       <p class="hint">MeteoAlarm feeds of the national weather services.</p>
       <div class="seg small" id="warnFilter">
         <button data-f="storm" class="active">Convective</button>
@@ -192,6 +209,7 @@
         <button class="btn primary" id="gpsBtn">Track my GPS</button>
         <button class="btn" id="pickBtn">Set position on map</button>
       </div>
+      <div id="gpsQual" class="gps-qual" hidden></div>
       <label class="inline">Road speed <input type="number" id="chaseSpeed" value="80" min="20" max="150" step="5"> km/h</label>
       <div class="chase-ctl" style="margin-top:10px">
         <div class="seg small" id="approachSeg"><button data-m="flank" class="active" title="Target the storm's right/south-east flank, away from the hail core">Safe flank</button><button data-m="track" title="Target the storm's forecast position">On track</button></div>
@@ -205,6 +223,7 @@
       <label class="range-row">Front-line buffer <input type="range" id="frontBuf" min="5" max="60" step="5"><b id="frontBufV"></b></label>
       <label class="range-row">Border zone (UA–RU/BY) <input type="range" id="borderBuf" min="0" max="40" step="5"><b id="borderBufV"></b></label>
       <p class="hint">Routes never enter occupied or contested territory, the buffers above, or cross the closed Ukraine–Russia/Belarus border. Always follow official restrictions, curfews and checkpoints.</p>
+      <div id="mineInfo" class="zone-info"></div>
       <h3>Nearby cells</h3>
       <div id="chaseInfo" class="chase-info"><p class="hint">Set your position to get distances, ETAs and intercept solutions for tracked cells.</p></div>
 
@@ -228,6 +247,8 @@
         <li><b>Lightning</b> — <a href="https://www.blitzortung.org" target="_blank" rel="noopener">Blitzortung.org</a> community network (private, non-commercial use).</li>
         <li><b>Satellite</b> — <a href="https://view.eumetsat.int" target="_blank" rel="noopener">EUMETSAT EUMETView</a> Meteosat.</li>
         <li><b>Warnings</b> — <a href="https://meteoalarm.org" target="_blank" rel="noopener">MeteoAlarm</a>.</li>
+        <li><b>Air-raid alerts</b> — <a href="https://alerts.in.ua" target="_blank" rel="noopener">alerts.in.ua</a>; oblast boundaries © <a href="https://www.geoboundaries.org" target="_blank" rel="noopener">geoBoundaries</a> (CC BY 4.0).</li>
+        <li><b>Occupied territory</b> — <a href="https://deepstatemap.live" target="_blank" rel="noopener">DeepStateMap</a>.</li>
         <li><b>Base maps</b> — © OpenStreetMap contributors, © CARTO, Esri.</li>
       </ul>
       <h3>Shortcuts</h3>
@@ -254,6 +275,28 @@
         <button class="icon-btn" id="xsClose" title="Close">✕</button></div>
       <canvas id="xsCanvas"></canvas>
     </div>
+    <div id="wnWin" class="wn-win" hidden>
+      <div class="xs-head"><b>Issue storm warning</b><span class="mini-note">review everything before publishing</span><button class="icon-btn" id="wnClose" title="Close">✕</button></div>
+      <div class="wn-body">
+        <div class="wn-row">
+          <label>Valid <select id="wnDur" class="mini"><option value="45">45 min</option><option value="60" selected>60 min</option><option value="90">90 min</option><option value="120">120 min</option></select></label>
+          <label>Severity <select id="wnSev" class="mini"><option value="moderate">Moderate</option><option value="severe">Severe</option><option value="extreme">Extreme</option></select></label>
+          <button class="btn" id="wnRegen" title="Rebuild the texts from the current settings">Regenerate text</button>
+        </div>
+        <div id="wnHaz" class="wn-haz"></div>
+        <div class="wn-towns"><b>In the path (Kyiv time):</b> <span id="wnTowns"></span></div>
+        <div class="wn-texts">
+          <label>Українською<textarea id="wnUk" rows="9" lang="uk" spellcheck="true"></textarea></label>
+          <label>English<textarea id="wnEn" rows="9" lang="en" spellcheck="true"></textarea></label>
+        </div>
+        <div class="wn-foot">
+          <span id="wnStatus" class="mini-note"></span>
+          <input type="password" id="wnToken" placeholder="Admin token" autocomplete="off">
+          <button class="btn primary" id="wnPublish">Publish</button>
+        </div>
+      </div>
+    </div>
+    <div id="gpsJump" class="gps-jump" hidden></div>
     <div id="legend" class="legend"></div>
     <div id="toast" class="toast" hidden></div>
     <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">Loading…</span></div>
@@ -357,6 +400,7 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/chartjs/chart.umd.min.js"></script>
 <script src="js/util.js"></script>
+<script src="js/i18n.js"></script>
 <script src="js/units.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/scales.js"></script>
@@ -373,6 +417,9 @@
 <script src="js/tools.js"></script>
 <script src="js/sections.js"></script>
 <script src="js/ranking.js"></script>
+<script src="js/safety.js"></script>
+<script src="js/warn.js"></script>
+<script src="js/offline.js"></script>
 <script src="js/skewt.js"></script>
 <script src="js/drawer.js"></script>
 <script src="js/app.js"></script>

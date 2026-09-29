@@ -1,0 +1,16 @@
+{
+  "name": "StormMap — storm analysis & tracking",
+  "short_name": "StormMap",
+  "description": "Convective weather analysis, live storm tracking, safe intercept routing and storm warnings for Eastern & Central Europe.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "en",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

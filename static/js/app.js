@@ -575,6 +575,9 @@
     let html = `<div class="chase-me">📍 <b>${SM.esc(place.label)}</b><br>${C.pos[0].toFixed(4)}, ${C.pos[1].toFixed(4)} · ${SM.esc(C.src)}</div>`;
     const zc = SM.zones.at(C.pos[0], C.pos[1]);
     if (zc) html += `<div class="danger-banner">⛔ Your position is inside a no-go area (${SM.esc(SM.zones.label(zc))}). Routing is disabled from here.</div>`;
+    html += SM.positionSafetyHTML(C.pos[0], C.pos[1]);
+    const sw = SM.warn.at(C.pos[0], C.pos[1]);
+    if (sw) html += `<div class="danger-banner">⚠ You are inside StormMap warning ${SM.esc(sw.id)} (${SM.esc(sw.severity)}) until ${SM.localHM(sw.expires)}.</div>`;
     const tracks = SM.tracker.tracks.map(tr => ({ tr, s: C.solve(tr) })).filter(x => x.s && x.s.dist < 400).sort((a, b) => a.s.dist - b.s.dist).slice(0, 15);
     const threats = tracks.filter(x => C.threatTo(x.tr));
     if (threats.length) html += `<div class="danger-banner">⚠ ${threats.length} cell(s) forecast to pass over or near your position: ${threats.map(x => 'C' + x.tr.id + ' (' + SM.esc(C.threatTo(x.tr)) + ')').join(', ')}</div>`;
@@ -633,7 +636,7 @@
     const safe = route.safety || {};
     const src = route.source === 'osrm' ? 'Real roads (OSRM / OpenStreetMap)' : 'Approximate — no road data';
     const steps = (route.steps || []).slice(0, 40).map(s => `<li>${stepText(s)}${s.distance_km != null ? `<span>${s.distance_km} km</span>` : ''}</li>`).join('');
-    return `
+    return `${SM.routeSafetyHTML ? SM.routeSafetyHTML(route.geometry || []) : ''}
       <div class="rt-stats">
         <div><span>Drive</span><b>${Math.round(route.duration_min)} min</b></div>
         <div><span>Distance</span><b>${Math.round(route.distance_km)} km</b></div>
@@ -721,6 +724,70 @@
     }).addTo(SM.map);
   }
 
+  /* ---------- GPS integrity: jamming / spoofing guard ----------
+   * Eastern Ukraine sees heavy GNSS jamming and spoofing. Fixes are only accepted when they are
+   * physically plausible relative to the last good fix; a big jump needs the user's confirmation. */
+  C.gps = (function () {
+    const MAX_KMH = 250, MAX_ACC = 3000, CONFIRM_KM = 15;
+    const g = { good: null, rejects: 0, lastRaw: 0, pending: null, timer: null, msg: '' };
+    const box = () => SM.$('#gpsQual');
+    function show() {
+      const b = box();
+      if (!b) return;
+      b.hidden = C.watch == null && !g.good;
+      const age = g.good ? Math.max(0, Math.round((Date.now() - g.good.at) / 1000)) : null;
+      const acc = g.good ? g.good.acc : null;
+      let q = 'good', label = 'GPS good';
+      if (!g.good) { q = 'lost'; label = 'Waiting for GPS fix'; }
+      else if (age > 90) { q = 'lost'; label = `GPS fix LOST ${Math.round(age / 60)} min — position is stale`; }
+      else if (acc > 150 || g.rejects > 0) { q = 'fair'; label = 'GPS degraded'; }
+      b.className = 'gps-qual ' + q;
+      b.innerHTML = `<b>${label}</b>${g.good ? ` · ±${Math.round(acc)} m · ${age}s ago` : ''}${g.rejects ? ` · <span title="Implausible fixes ignored (possible jamming/spoofing)">${g.rejects} rejected</span>` : ''}${g.msg ? ` · ${SM.esc(g.msg)}` : ''}`;
+    }
+    function accept(f) {
+      g.good = Object.assign(f, { at: Date.now() }); g.msg = ''; g.pending = null;
+      SM.$('#gpsJump').hidden = true;
+      C.setPos(f.lat, f.lon, `GPS ±${Math.round(f.acc)} m`);
+      show();
+    }
+    function askJump(f, d) {
+      g.pending = f;
+      const b = SM.$('#gpsJump');
+      b.hidden = false;
+      b.innerHTML = `<b>⚠ GPS jumped ${Math.round(d)} km</b> to ${SM.esc(SM.nearestCity(f.lat, f.lon).label)} — possible spoofing.
+        <div><button class="btn" id="gjKeep">Keep last position</button><button class="btn primary" id="gjAccept">Accept new position</button></div>`;
+      SM.$('#gjKeep').onclick = () => { b.hidden = true; g.pending = null; };
+      SM.$('#gjAccept').onclick = () => accept(Object.assign(g.pending, { t: Date.now() }));
+      SM.alerts.raise('gps-jump', 'warn', 'Suspicious GPS jump', `${Math.round(d)} km in a moment — check your surroundings before trusting navigation.`, 5);
+    }
+    return {
+      reset() { g.good = null; g.rejects = 0; g.msg = ''; clearInterval(g.timer); g.timer = setInterval(show, 5000); show(); },
+      stop() { clearInterval(g.timer); g.timer = null; g.pending = null; SM.$('#gpsJump').hidden = true; if (box()) box().hidden = true; },
+      lost(msg) { g.msg = msg; show(); },
+      fix(p) {
+        const c = p.coords, f = { lat: c.latitude, lon: c.longitude, acc: c.accuracy || 9999, t: p.timestamp || Date.now() };
+        g.lastRaw = Date.now();
+        if (!(Math.abs(f.lat) <= 90 && Math.abs(f.lon) <= 180) || (f.lat === 0 && f.lon === 0)) { g.rejects++; show(); return false; }
+        if (f.acc > MAX_ACC) { g.msg = `ignored fix ±${Math.round(f.acc / 1000)} km`; show(); return false; }
+        if (!g.good) { accept(f); return true; }
+        const d = SM.geo.dist(g.good.lat, g.good.lon, f.lat, f.lon);
+        const slack = (g.good.acc + f.acc) / 1000;
+        const dtH = Math.max(1, (f.t - g.good.t) / 1000) / 3600;
+        const kmh = Math.max(0, d - slack) / dtH;
+        const reportedKmh = c.speed != null ? c.speed * 3.6 : null;
+        if (kmh > MAX_KMH || (reportedKmh != null && reportedKmh > MAX_KMH)) {
+          g.rejects++;
+          if (d > CONFIRM_KM && !g.pending) askJump(f, d);
+          else if (g.pending && SM.geo.dist(g.pending.lat, g.pending.lon, f.lat, f.lon) < 2) g.pending = f;
+          show();
+          return false;
+        }
+        accept(f);
+        return true;
+      },
+    };
+  })();
+
   function initChase() {
     const fb = SM.$('#frontBuf'), bb = SM.$('#borderBuf');
     fb.value = SM.zones.front; bb.value = SM.zones.border;
@@ -741,23 +808,27 @@
     SM.$('#lyrZones').addEventListener('change', e => SM.zones.setEnabled(e.target.checked));
     SM.$('#lyrObs').addEventListener('change', e => { SM.obs.setEnabled(e.target.checked); renderField(false); });
     setInterval(() => { if (C.pos) SM.$('#sunBox').innerHTML = SM.sun.summary(C.pos[0], C.pos[1]); }, 60000);
+    function stopGps() {
+      if (C.watch != null) navigator.geolocation.clearWatch(C.watch);
+      C.watch = null;
+      C.gps.stop();
+      SM.$('#gpsBtn').textContent = 'Track my GPS'; SM.$('#gpsBtn').classList.remove('on');
+    }
     SM.$('#gpsBtn').addEventListener('click', () => {
-      if (C.watch != null) {
-        navigator.geolocation.clearWatch(C.watch); C.watch = null;
-        SM.$('#gpsBtn').textContent = 'Track my GPS'; SM.$('#gpsBtn').classList.remove('on');
-        return;
-      }
+      if (C.watch != null) { stopGps(); return; }
       if (!navigator.geolocation) { SM.toast('Geolocation not available in this browser', true); return; }
       SM.$('#gpsBtn').textContent = 'Stop GPS'; SM.$('#gpsBtn').classList.add('on');
       let first = true;
+      C.gps.reset();
       C.watch = navigator.geolocation.watchPosition(p => {
-        C.setPos(p.coords.latitude, p.coords.longitude, `GPS ±${Math.round(p.coords.accuracy)} m`);
-        if (first) { SM.map.flyTo(C.pos, 8); first = false; }
+        const ok = C.gps.fix(p);
+        if (ok && first) { SM.map.flyTo(C.pos, 8); first = false; }
       }, err => {
-        SM.toast('GPS: ' + err.message + (location.protocol === 'http:' && location.hostname !== 'localhost' ? ' (browsers require HTTPS or localhost for GPS — use "Set position on map")' : ''), true, 9000);
-        navigator.geolocation.clearWatch(C.watch); C.watch = null;
-        SM.$('#gpsBtn').textContent = 'Track my GPS'; SM.$('#gpsBtn').classList.remove('on');
-      }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
+        if (err.code === 1) {  // permission denied: stop
+          SM.toast('GPS: ' + err.message + (location.protocol === 'http:' && location.hostname !== 'localhost' ? ' (browsers require HTTPS or localhost for GPS — use "Set position on map")' : ''), true, 9000);
+          stopGps();
+        } else C.gps.lost(err.message);  // timeout / unavailable: keep watching (jamming often recovers)
+      }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
     });
     SM.$('#pickBtn').addEventListener('click', () => {
       C.picking = !C.picking;
@@ -947,6 +1018,11 @@
     SM.alerts.init();
     SM.chaselog.init();
     SM.tracker.init();
+    SM.safetyInit();
+    SM.warn.init();
+    SM.offline.init();
+    SM.on('airalerts', () => C.render());
+    SM.on('stormwarnings', () => C.render());
 
     // first grid load: pick the current hour once the time axis is known
     const hourGiven = S.hour != null;

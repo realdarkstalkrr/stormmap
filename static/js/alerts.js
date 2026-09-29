@@ -2,7 +2,7 @@
 'use strict';
 
 (function () {
-  const DEFAULTS = { on: true, ltgKm: 15, cells: true, potential: true, warnings: true, sound: true };
+  const DEFAULTS = { on: true, ltgKm: 15, cells: true, potential: true, warnings: true, airraid: true, sound: true };
   let cfg = Object.assign({}, DEFAULTS);
   try { cfg = Object.assign(cfg, JSON.parse(localStorage.getItem('sm-alerts') || '{}')); } catch (e) { /* ignore */ }
 
@@ -70,6 +70,15 @@
         A.raise('pot-' + tr.id, 'info', `C${tr.id}: high chase potential`, `${tr.place.label} · score ${tr.rank.score} · ${tr.rank.reasons.filter(r => r[0] === '+').slice(0, 2).map(r => r[1]).join('; ')}`, 180);
       }
     }
+    if (pos && cfg.airraid && SM.air) {
+      const s = SM.air.statusAt(pos[0], pos[1]);
+      if (s && s.full) A.raise('air-' + s.key, 'danger', `AIR-RAID ALERT: ${s.name}`, 'Stop the chase and go to the nearest shelter. Do not film or post positions of air-defence activity or impacts.', 30);
+      else if (s) A.raise('airp-' + s.key + s.partial.join(), 'warn', `Partial air-raid alert: ${s.name}`, s.partial.join(', '), 30);
+    }
+    if (pos && cfg.warnings && SM.warn) {
+      const w = SM.warn.at(pos[0], pos[1]);
+      if (w) A.raise('sw-' + w.id, w.severity === 'moderate' ? 'warn' : 'danger', `You are inside storm warning ${w.id}`, (SM.i18n && SM.i18n.lang === 'uk' ? w.title_uk : w.title_en) || w.severity, 60);
+    }
     if (cfg.warnings && SM.state.warnings && pos) {
       const cc = SM.nearestCity(pos[0], pos[1]).country;
       for (const w of SM.state.warnings.warnings) {
@@ -92,7 +101,8 @@
       <label class="range-row">Lightning radius <input type="range" data-k="ltgKm" min="0" max="40" step="5" value="${cfg.ltgKm}"><b>${cfg.ltgKm ? cfg.ltgKm + ' km' : 'off'}</b></label>
       <label class="toggle"><input type="checkbox" data-k="cells" ${cfg.cells ? 'checked' : ''}><span></span>Cell will pass over me</label>
       <label class="toggle"><input type="checkbox" data-k="potential" ${cfg.potential ? 'checked' : ''}><span></span>New high-potential storm</label>
-      <label class="toggle"><input type="checkbox" data-k="warnings" ${cfg.warnings ? 'checked' : ''}><span></span>Orange/red warnings in my country</label>
+      <label class="toggle"><input type="checkbox" data-k="warnings" ${cfg.warnings ? 'checked' : ''}><span></span>Storm warnings at my position</label>
+      <label class="toggle"><input type="checkbox" data-k="airraid" ${cfg.airraid ? 'checked' : ''}><span></span>Air-raid alert in my oblast</label>
       <label class="toggle"><input type="checkbox" data-k="sound" ${cfg.sound ? 'checked' : ''}><span></span>Sound</label>
       ${'Notification' in window && Notification.permission !== 'granted' ? '<button class="btn" id="notifBtn">Enable desktop notifications</button>' : ''}`;
     box.querySelectorAll('[data-k]').forEach(el => el.addEventListener(el.type === 'range' ? 'input' : 'change', () => {
@@ -109,5 +119,7 @@
     A.renderFeed();
     setInterval(check, 20000);
     SM.on('cells', check);
+    SM.on('airalerts', check);
+    SM.on('stormwarnings', check);
   };
 })();

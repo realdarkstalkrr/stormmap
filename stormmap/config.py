@@ -9,6 +9,10 @@ CACHE_DIR = Path(os.environ.get("STORMMAP_CACHE_DIR", ROOT / ".cache"))
 
 HOST = os.environ.get("STORMMAP_HOST", "0.0.0.0")
 PORT = int(os.environ.get("STORMMAP_PORT", "8000"))
+# Optional built-in TLS (GPS, offline mode and notifications need HTTPS outside localhost).
+# A reverse proxy (Caddy / nginx) with Let's Encrypt is the recommended public setup.
+TLS_CERT = os.environ.get("STORMMAP_TLS_CERT", "")
+TLS_KEY = os.environ.get("STORMMAP_TLS_KEY", "")
 
 # Open-Meteo endpoints. A commercial API key can be supplied to lift rate limits.
 OPEN_METEO_KEY = os.environ.get("OPEN_METEO_API_KEY", "")

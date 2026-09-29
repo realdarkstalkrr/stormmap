@@ -146,9 +146,11 @@
         <div class="rk-actions">
           <button class="btn" data-act="locate">Locate</button>
           <button class="btn primary" data-act="intercept" ${r.chase.ok && tr.v ? '' : 'disabled title="Not chaseable or motion unknown"'}>Plan intercept</button>
+          <button class="btn warnbtn" data-act="warn" title="Draft a storm-based warning for the towns in this cell's path">Issue warning</button>
         </div>`);
       el.querySelector('[data-act=locate]').addEventListener('click', () => SM.tracker.select(tr.id, true));
       el.querySelector('[data-act=intercept]').addEventListener('click', () => SM.chase.planIntercept(tr));
+      el.querySelector('[data-act=warn]').addEventListener('click', () => SM.warn.compose(tr));
       box.appendChild(el);
     });
   };

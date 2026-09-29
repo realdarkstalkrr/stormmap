@@ -97,7 +97,17 @@
   };
 
   U.buildMenu = function (box) {
-    box.innerHTML = '<h4>Units</h4>';
+    box.innerHTML = '<h4>Language / Мова</h4>';
+    const lrow = SM.el('div', { class: 'unit-row' }, '<span>Interface</span>');
+    const lseg = SM.el('div', { class: 'seg small' });
+    for (const [val, lab] of [['en', 'EN'], ['uk', 'УКР']]) {
+      const b = SM.el('button', { class: SM.i18n.lang === val ? 'active' : '' }, lab);
+      b.addEventListener('click', e => { e.stopPropagation(); if (SM.i18n.lang !== val) SM.i18n.set(val); });
+      lseg.appendChild(b);
+    }
+    lrow.appendChild(lseg);
+    box.appendChild(lrow);
+    box.appendChild(SM.el('h4', {}, 'Units'));
     for (const [kind, opts] of Object.entries(U.OPTIONS)) {
       const row = SM.el('div', { class: 'unit-row' }, `<span>${LABELS[kind]}</span>`);
       const seg = SM.el('div', { class: 'seg small' });

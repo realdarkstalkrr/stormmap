@@ -49,6 +49,14 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Chase mode** | GPS tracking or a manually set position. For each tracked cell it shows distance and bearing, the closest point of approach, a *"cell hits you in N min"* alert, and an intercept solution (heading, distance and time at your road speed). |
 | **Warnings** | MeteoAlarm feeds for DE, PL, SK, RO, BG, FI and UA, with a convective filter. |
 | **Satellite** | EUMETSAT Meteosat IR 10.8, RGB Convection, RGB Airmass and WV 6.2 (WMS). |
+| **Air-raid alerts (Ukraine)** | Live oblast and raion alerts from [alerts.in.ua](https://alerts.in.ua), refreshed every 30 s and drawn on oblast boundaries from geoBoundaries. A full alert turns red and a partial one orange. You get a big banner and a sound alert when your position is in an oblast under alert. Every road route and intercept lists the alerted oblasts it passes through. |
+| **Mine-contamination areas** | Load an official GeoJSON of potentially contaminated territory (`STORMMAP_MINES_FILE`). The app then warns when you or a route are inside it: stay on the paved surface. It never pretends to be a clearance map. |
+| **Storm-based warnings** | Click **Issue warning** on a ranked cell to draft a 45–120 min threat polygon along its forecast track. The draft lists the towns in its path with ETAs in Kyiv time, suggests hazards and severity, and pre-fills Ukrainian and English texts. A person reviews and edits the draft, then publishes it with the admin token. Published warnings show on everyone's map, are posted to a Telegram channel and are sent to bot subscribers inside or near the polygon. They can be cancelled. Without a bot token everything runs as a dry run. |
+| **Telegram bot** | `/start`, then share your location or type `/town Краматорськ`. Other commands: `/radius 5–150`, `/lang uk\|en`, `/status`, `/warnings`, `/stop`. |
+| **GPS integrity** | Protects against GNSS jamming and spoofing, which are common in eastern Ukraine. The app rejects fixes that imply more than 250 km/h, have more than 3 km of error, or sit at 0,0. A big jump needs your confirmation before it is accepted. A quality indicator shows accuracy, fix age and rejected fixes, and a lost fix is flagged instead of silently keeping a stale position. |
+| **Offline / installable (PWA)** | A service worker caches the app shell, the last data you loaded (model grids, zones, alerts, warnings, radar) and map tiles. **Save this area offline** prefetches tiles for the current view. An *OFFLINE* badge shows when you are looking at cached data. This needs HTTPS (or `localhost`). |
+| **Share-safe export** | Martial-law-aware reporting. *Share-safe text* keeps only the nearest settlement or a ~10 km grid and the hour, with no GPS track. The precise GPX/GeoJSON/CSV exports stay for ESWD and your own records. |
+| **Ukrainian interface** | EN / УКР switch in ⚙ settings; the default follows the browser language. Warning texts, bot replies and town names are bilingual. |
 
 ## Configuration (environment variables)
 
@@ -65,6 +73,34 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | `STORMMAP_ZONES_URL` | DeepStateMap API | Source of the occupied-territory GeoJSON |
 | `STORMMAP_ZONES_FILE` | – | Local GeoJSON used instead of the live feed. Features are classified by name or fill colour. |
 | `STORMMAP_FRONT_BUFFER_KM` / `STORMMAP_BORDER_BUFFER_KM` | `30` / `20` | Default buffers. You can also change them per browser in Chase → No-go zones. |
+| `ALERTS_IN_UA_TOKEN` | – | Free alerts.in.ua API token (request it at alerts.in.ua). Without it the air-raid layer is off. |
+| `STORMMAP_OBLASTS_FILE` | – | Local oblast-boundary GeoJSON. Otherwise the app downloads geoBoundaries ADM1 once and caches it. |
+| `STORMMAP_MINES_FILE` | – | GeoJSON of potentially mine-contaminated areas (or put it at `static/data/mines.geojson`) |
+| `STORMMAP_ADMIN_TOKEN` | – | Required to publish or cancel storm warnings. Use a long random string. In `--demo`, `demo` is accepted. |
+| `TELEGRAM_BOT_TOKEN` | – | Bot token from @BotFather. It enables the subscriber bot and sending. |
+| `TELEGRAM_CHANNEL` | – | Channel to post warnings to, such as `@my_storm_warnings`. The bot must be an admin of the channel. |
+| `STORMMAP_TLS_CERT` / `STORMMAP_TLS_KEY` | – | Serve HTTPS directly (PEM files). A reverse proxy is usually easier; see below. |
+
+Keep tokens in environment variables or a service file. Never commit them.
+
+### Public hosting with HTTPS
+
+GPS, offline mode and notifications only work over HTTPS. The simplest setup is [Caddy](https://caddyserver.com), which gets Let's Encrypt certificates automatically:
+
+```
+# /etc/caddy/Caddyfile
+storm.example.org {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+Then run StormMap bound to localhost:
+
+```bash
+STORMMAP_HOST=127.0.0.1 STORMMAP_ADMIN_TOKEN=$(openssl rand -hex 24) python3 server.py
+```
+
+For a public instance, run your own OSRM server and consider an Open-Meteo API key: the free public services are meant for light use.
 
 ### Open-Meteo free-tier budget
 
@@ -88,6 +124,13 @@ stormmap/geo.py        country polygons, grid masks, nearest town
 stormmap/zones.py      DeepStateMap no-go zones → 0.01° raster, buffers, closed-border rule
 stormmap/routing.py    OSRM routing + zone validation/detours, offline network, storm intercept
 stormmap/demo.py       synthetic trough/warm-sector weather, radar tiles, strikes
+stormmap/airalerts.py  alerts.in.ua air-raid alerts + oblast boundaries
+stormmap/hazards.py    mine-contamination GeoJSON loader
+stormmap/publish.py    storm-warning store, admin check, Telegram channel + subscriber bot
+static/sw.js           service worker (offline shell, data and tile cache)
+static/js/safety.js    air-raid and mine layers, route/position safety banners
+static/js/warn.js      storm-based warning composer and active-warnings layer
+static/js/i18n.js      Ukrainian interface
 static/js/field.js     bicubic field rendering, isolines + H/L centres, city values, barbs
 static/js/particles.js animated wind-flow particles
 static/js/sections.js  cross-section & time–height renderer (shading, contours, barbs, terrain)
@@ -97,7 +140,7 @@ static/css/retro.css   2000s-style square, beveled black theme (loaded over app.
 static/                index.html, css, other js (radar, lightning, tracker, Skew-T, drawer…)
 ```
 
-API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/obs`, `/api/xsection`, `/api/timeheight`, `/api/sounding/export`, `/api/zones`, `/api/route`, `/api/intercept`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
+API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/obs`, `/api/xsection`, `/api/timeheight`, `/api/sounding/export`, `/api/zones`, `/api/route`, `/api/intercept`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`, `/api/airalerts`, `/api/oblasts`, `/api/hazards`, `/api/warn/active`, `/api/warn/status`, and the POST endpoints `/api/warn/publish` and `/api/warn/cancel` (both require the `X-Admin-Token` header).
 
 ## Tests
 
@@ -117,6 +160,9 @@ python3 -m unittest discover -s tests -t .
 - **Grid-scale convergence is weaker than reality.** Convergence and MFC are computed from the model grid, so on coarse grids they only show broad features. Pick a single country to get a finer grid.
 - **Offline routing is approximate.** Without a reachable routing server (and in `--demo`), routes use straight links between towns and are labelled *Approximate — no road data*.
 - **Blitzortung.org data is for private, non-commercial use.** GPS in browsers requires HTTPS or `localhost`. On plain HTTP from another device, use *Set position on map*.
+- **StormMap warnings are unofficial.** They are issued by whoever holds the admin token and never replace Ukrhydrometcenter or State Emergency Service warnings. The texts say so. Review every draft: the polygon is a straight-line extrapolation of radar motion.
+- **Air-raid alerts depend on alerts.in.ua.** If the feed fails, the status pill turns red. Always keep the official *Air Alert* (Повітряна тривога) app running as well.
+- **The Ukrainian translation is a first pass.** Corrections from native-speaking forecasters are welcome (`static/js/i18n.js`).
 - **This is automated guidance.** Always check official forecasts and warnings, and chase responsibly.
 
 Data: Open-Meteo (CC BY 4.0), RainViewer, Blitzortung.org, EUMETSAT, MeteoAlarm, © OpenStreetMap contributors, © CARTO, Esri. Borders: Natural Earth via world-atlas, with Crimea shown as part of Ukraine.
