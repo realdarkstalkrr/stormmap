@@ -36,6 +36,11 @@ class ServerTests(unittest.TestCase):
         status, _, body = self.get(path)
         return status, json.loads(body)
 
+    def test_health(self):
+        _, h = self.get_json("/api/health")
+        self.assertTrue(h["ok"])
+        self.assertTrue(h["demo"])
+
     def test_meta(self):
         _, m = self.get_json("/api/meta")
         self.assertEqual(set(m["countries"]), {"UA", "RU", "TR", "RO", "BG", "SK", "PL", "FI", "DE", "BY"})

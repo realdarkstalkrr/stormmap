@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit and API tests (demo mode, no network)
+        run: python -m unittest discover -s tests -t . -v
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JavaScript syntax check
+        run: for f in static/js/*.js static/sw.js; do node --check "$f"; done
+      - name: JSON data files are valid
+        run: for f in static/data/*.json static/data/*.geojson static/manifest.webmanifest; do python3 -m json.tool "$f" > /dev/null; done
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t stormmap:ci .
+      - name: Run container (demo) and hit the API
+        run: |
+          docker run -d --name sm -p 8000:8000 -e STORMMAP_DEMO=1 stormmap:ci
+          for i in $(seq 1 30); do curl -fsS http://localhost:8000/api/health && break; sleep 1; done
+          curl -fsS http://localhost:8000/ -o /dev/null
+          curl -fsS http://localhost:8000/api/meta -o /dev/null
+          curl -fsS "http://localhost:8000/api/grid?model=best_match&region=UA&hour=12" -o /dev/null
+          curl -fsS http://localhost:8000/api/airalerts -o /dev/null
+      - name: Container logs
+        if: always()
+        run: docker logs sm

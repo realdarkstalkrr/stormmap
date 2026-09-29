@@ -74,6 +74,8 @@ def _point(qs, name):
 
 def route_api(path, qs):
     """Returns (status, content_type, body_bytes_or_obj, cache_seconds)."""
+    if path == "/api/health":
+        return 200, "json", {"ok": True, "version": __version__, "demo": config.DEMO_MODE}, 0
     if path == "/api/meta":
         return 200, "json", _meta(), 0
     if path == "/api/grid":

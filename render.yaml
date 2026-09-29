@@ -1,0 +1,22 @@
+# One-click deploy from GitHub to Render (free tier works; it sleeps when idle).
+# Dashboard → New → Blueprint → pick this repository.
+services:
+  - type: web
+    name: stormmap
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: STORMMAP_CACHE_DIR
+        value: /tmp/stormmap-cache
+      - key: STORMMAP_ADMIN_TOKEN
+        generateValue: true
+      - key: ALERTS_IN_UA_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHANNEL
+        sync: false
+      - key: OPEN_METEO_API_KEY
+        sync: false

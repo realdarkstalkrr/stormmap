@@ -15,7 +15,8 @@ import sys
 def main():
     ap = argparse.ArgumentParser(description="StormMap — storm analysis & tracking server")
     ap.add_argument("--host", default=os.environ.get("STORMMAP_HOST", "0.0.0.0"))
-    ap.add_argument("--port", type=int, default=int(os.environ.get("STORMMAP_PORT", "8000")))
+    # PORT is what most hosting platforms (Render, Railway, Fly, Heroku…) inject
+    ap.add_argument("--port", type=int, default=int(os.environ.get("STORMMAP_PORT") or os.environ.get("PORT") or "8000"))
     ap.add_argument("--demo", action="store_true", help="serve synthetic data without calling external APIs")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()

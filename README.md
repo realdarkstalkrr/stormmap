@@ -1,5 +1,10 @@
 # StormMap ⚡
 
+[![CI](https://github.com/realdarkstalkrr/stormmap/actions/workflows/ci.yml/badge.svg)](https://github.com/realdarkstalkrr/stormmap/actions/workflows/ci.yml)
+[![Container](https://github.com/realdarkstalkrr/stormmap/actions/workflows/docker.yml/badge.svg)](https://github.com/realdarkstalkrr/stormmap/pkgs/container/stormmap)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/realdarkstalkrr/stormmap)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/realdarkstalkrr/stormmap)
+
 StormMap is a black, map-first meteorology app for storm chasing and convective analysis. It covers **Ukraine, European Russia, Türkiye, Romania, Bulgaria, Slovakia, Poland, Finland, Germany and Belarus**.
 
 It runs as a single Python server over plain HTTP on **port 8000**. You don't need to install any packages or run a build step.
@@ -57,6 +62,25 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Offline / installable (PWA)** | A service worker caches the app shell, the last data you loaded (model grids, zones, alerts, warnings, radar) and map tiles. **Save this area offline** prefetches tiles for the current view. An *OFFLINE* badge shows when you are looking at cached data. This needs HTTPS (or `localhost`). |
 | **Share-safe export** | Martial-law-aware reporting. *Share-safe text* keeps only the nearest settlement or a ~10 km grid and the hour, with no GPS track. The precise GPX/GeoJSON/CSV exports stay for ESWD and your own records. |
 | **Ukrainian interface** | EN / УКР switch in ⚙ settings; the default follows the browser language. Warning texts, bot replies and town names are bilingual. |
+
+## Deploying from GitHub
+
+StormMap is a Python server, so it can't run on GitHub Pages, which only serves static files. Pick one of these instead:
+
+| Option | How | Notes |
+|---|---|---|
+| **GitHub Codespaces** | Click *Open in GitHub Codespaces* above. The server starts by itself and port 8000 opens in your browser. | The quickest way to try it with **live data**. The forwarded URL is HTTPS, so GPS and offline mode work. It stops when the codespace sleeps. |
+| **Docker image (GHCR)** | Every push to the default branch publishes `ghcr.io/realdarkstalkrr/stormmap:latest` (amd64 + arm64); `v*` tags publish versioned images. Run it with `docker run -d -p 8000:8000 -v stormmap:/data ghcr.io/realdarkstalkrr/stormmap:latest`, or with `docker compose up -d`. | Works on any VPS, a home server or a Raspberry Pi. The package starts out private: make it public under *Packages → stormmap → Package settings* if you want to pull it without logging in. |
+| **Render** | Click *Deploy to Render* above, or use Dashboard → New → Blueprint → this repo. `render.yaml` builds the Dockerfile, generates an admin token and asks for the optional keys. | You get free HTTPS on `*.onrender.com`. The free plan sleeps when idle, and its cache and warnings are lost on restart. |
+| **Railway / Fly.io / others** | Point them at the repository. The Dockerfile is detected automatically, and the server honours the `PORT` variable those platforms set. | Health check: `/api/health` |
+
+**CI:** `.github/workflows/ci.yml` runs on every push and pull request:
+
+- the test suite on Python 3.9–3.13, in demo mode with no network
+- a JavaScript syntax check and JSON validation
+- a Docker build with a smoke test against the running container
+
+Secrets such as `ALERTS_IN_UA_TOKEN`, `STORMMAP_ADMIN_TOKEN` and `TELEGRAM_BOT_TOKEN` belong in the hosting platform's environment settings, or in a `.env` file next to `docker-compose.yml`. Never put them in the repository.
 
 ## Configuration (environment variables)
 

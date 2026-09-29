@@ -1,0 +1,21 @@
+# docker compose up -d   →   http://localhost:8000
+# Put secrets in a .env file next to this one (never commit it).
+services:
+  stormmap:
+    image: ghcr.io/realdarkstalkrr/stormmap:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - stormmap-cache:/data
+    environment:
+      STORMMAP_DEMO: ${STORMMAP_DEMO:-0}
+      OPEN_METEO_API_KEY: ${OPEN_METEO_API_KEY:-}
+      ALERTS_IN_UA_TOKEN: ${ALERTS_IN_UA_TOKEN:-}
+      STORMMAP_ADMIN_TOKEN: ${STORMMAP_ADMIN_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHANNEL: ${TELEGRAM_CHANNEL:-}
+
+volumes:
+  stormmap-cache:
