@@ -245,10 +245,12 @@
     let score = (c.maxDbz - 35) * 2 + Math.log10(1 + c.area) * 6 + Math.min(lt10, 200) / 10;
     if (env) score += (env.scp || 0) * 2 + (env.stp || 0) * 5 + (env.ship || 0) * 3;
     const sev = c.maxDbz >= 60 || score > 80 ? 3 : c.maxDbz >= 55 || score > 60 ? 2 : c.maxDbz >= 50 ? 1 : 0;
-    return Object.assign(tr, {
+    Object.assign(tr, {
       cur: c, place, spd, dir, lt10, lt10prev, env, age, flags, score, sev,
       trend: { dbz: c.maxDbz - prev.maxDbz, area: prev.area ? (c.area / prev.area - 1) * 100 : 0 },
     });
+    tr.rank = SM.rankCell ? SM.rankCell(tr) : null;
+    return tr;
   }
 
   T.forecast = function (tr, minutes) {
@@ -313,11 +315,12 @@
       const c = tr.cur, e = tr.env || {};
       const mv = tr.v ? `${SM.geo.compass(tr.dir)} ${Math.round(tr.spd * 3.6)}` : '—';
       const me = SM.chase && SM.chase.threatTo(tr);
-      const flags = tr.flags.map(f => `<span class="flag ${f[1]}">${f[0]}</span>`).join('') + (me ? `<span class="flag me">${SM.esc(me)}</span>` : '');
+      const rk = tr.rank ? `<span class="flag" style="background:${tr.rank.color}33;color:${tr.rank.color}">${tr.rank.verdict} ${tr.rank.score}</span>` : '';
+      const flags = rk + tr.flags.map(f => `<span class="flag ${f[1]}">${f[0]}</span>`).join('') + (me ? `<span class="flag me">${SM.esc(me)}</span>` : '');
       const trend = tr.trend.dbz > 2 ? '▲' : tr.trend.dbz < -2 ? '▼' : '';
       const el = SM.el('div', { class: 'cell' + (T.selected === tr.id ? ' sel' : ''), style: `--c:${T.color(tr)}` }, `
         <div class="cell-top"><span class="cell-id">C${tr.id} <small style="color:var(--dim)">${Math.round(tr.age)} min</small></span><span class="cell-dbz">${c.maxDbz} dBZ ${trend}</span></div>
-        <div class="cell-place">${SM.esc(tr.place.label)}${tr.place.country ? ' · ' + tr.place.country : ''}</div>
+        <div class="cell-place">${SM.esc(tr.place.label)}</div>
         <div class="cell-stats">
           <div><small>Motion</small><span>${mv}</span></div>
           <div><small>Area</small><span>${Math.round(c.area)}</span></div>
@@ -373,6 +376,7 @@
     T.tracks.forEach(enrich);
     T.tracks.sort((a, b) => b.score - a.score);
     draw(); renderList();
+    SM.emit('cells', T.tracks);
   };
 
   T.init = function () {

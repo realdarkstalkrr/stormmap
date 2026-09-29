@@ -80,6 +80,19 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(ctype, "image/png")
         self.assertTrue(body.startswith(b"\x89PNG"))
 
+    def test_zones_route_intercept_api(self):
+        _, z = self.get_json("/api/zones?front=30&border=20")
+        g = z["grid"]
+        self.assertEqual(sum(z["rle"][1::2]), g["nlat"] * g["nlon"])
+        self.assertTrue(z["meta"]["fallback"])  # demo mode: conservative fallback, clearly flagged
+        _, r = self.get_json("/api/route?from=50.45,30.52&to=48.46,35.05")
+        self.assertTrue(r["safety"]["ok"])
+        _, x = self.get_json("/api/intercept?from=49.44,32.06&lat=49.0&lon=30.6&u=12&v=8&r=12&mode=flank")
+        self.assertTrue(x["ok"])
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.get("/api/route?from=50.45,30.52&to=44.95,34.10")
+        self.assertEqual(cm.exception.code, 422)
+
     def test_bad_requests(self):
         for path, code in [("/api/grid?model=nope", 400), ("/api/sounding?lat=x&lon=1", 400),
                            ("/api/radar/tile/5/1/1.png?path=/etc/passwd", 400), ("/api/unknown", 404),

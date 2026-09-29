@@ -29,11 +29,14 @@
       .setView(SM.meta.center, 5);
     L.control.zoom({ position: 'topright' }).addTo(map);
     L.control.scale({ imperial: false, position: 'topright' }).addTo(map);
-    const panes = [['fieldPane', 350], ['isoPane', 355], ['satPane', 360], ['radarPane', 400], ['particlePane', 410], ['bordersPane', 420], ['labelsPane', 430], ['valuesPane', 440], ['lightningPane', 450], ['cellPane', 500]];
+    const panes = [['fieldPane', 350], ['isoPane', 355], ['satPane', 360], ['radarPane', 400], ['particlePane', 410], ['zonePane', 415], ['bordersPane', 420], ['roadPane', 425], ['labelsPane', 430], ['valuesPane', 440], ['lightningPane', 450], ['cellPane', 500]];
     for (const [name, z] of panes) { map.createPane(name); map.getPane(name).style.zIndex = z; }
     map.getPane('valuesPane').style.pointerEvents = 'none';
     map.getPane('particlePane').style.pointerEvents = 'none';
     map.getPane('isoPane').style.pointerEvents = 'none';
+    map.getPane('zonePane').style.pointerEvents = 'none';
+    map.getPane('roadPane').style.pointerEvents = 'none';
+    map.createPane('routePane'); map.getPane('routePane').style.zIndex = 470;
     map.getPane('labelsPane').style.pointerEvents = 'none';
     map.getPane('bordersPane').style.pointerEvents = 'none';
     setBase('dark');
@@ -525,6 +528,8 @@
     if (!C.pos) return;
     const place = SM.nearestCity(C.pos[0], C.pos[1]);
     let html = `<div class="chase-me">📍 <b>${SM.esc(place.label)}</b><br>${C.pos[0].toFixed(4)}, ${C.pos[1].toFixed(4)} · ${SM.esc(C.src)}</div>`;
+    const zc = SM.zones.at(C.pos[0], C.pos[1]);
+    if (zc) html += `<div class="danger-banner">⛔ Your position is inside a no-go area (${SM.esc(SM.zones.label(zc))}). Routing is disabled from here.</div>`;
     const tracks = SM.tracker.tracks.map(tr => ({ tr, s: C.solve(tr) })).filter(x => x.s && x.s.dist < 400).sort((a, b) => a.s.dist - b.s.dist).slice(0, 15);
     const threats = tracks.filter(x => C.threatTo(x.tr));
     if (threats.length) html += `<div class="danger-banner">⚠ ${threats.length} cell(s) forecast to pass over or near your position: ${threats.map(x => 'C' + x.tr.id + ' (' + SM.esc(C.threatTo(x.tr)) + ')').join(', ')}</div>`;
@@ -534,7 +539,10 @@
       const el = SM.el('div', { class: 'icpt', style: `--c:${SM.tracker.color(tr)}` }, `
         <div class="i-top"><span>C${tr.id} · ${tr.cur.maxDbz} dBZ</span><span>${Math.round(s.dist)} km ${SM.geo.compass(s.brg)}</span></div>
         <p>${tr.v ? `Moving ${SM.geo.compass(tr.dir)} at ${Math.round(tr.spd * 3.6)} km/h · ${s.approaching ? '<b>approaching</b>' : 'moving away'} · closest ${Math.round(s.cpaD)} km in ${Math.round(s.cpaT)} min` : 'Motion unknown (new cell)'}</p>
-        <p>${s.icptT != null ? `Intercept: head <b>${SM.geo.compass(s.icptBrg)}</b> ${Math.round(s.icptDist)} km, meet in <b>${Math.round(s.icptT)} min</b> (${SM.utcHM(Date.now() / 1000 + s.icptT * 60)}Z)` : 'No intercept possible at this speed'}</p>`);
+        <p>${s.icptT != null ? `Straight-line estimate: head <b>${SM.geo.compass(s.icptBrg)}</b> ${Math.round(s.icptDist)} km, meet in ~<b>${Math.round(s.icptT)} min</b>` : 'No intercept possible at this speed'}</p>
+        ${tr.rank ? `<p>Potential: <b style="color:${tr.rank.color}">${tr.rank.verdict} (${tr.rank.score})</b>${tr.rank.chase.ok ? '' : ' · <b style="color:#f87171">not chaseable</b>'}</p>` : ''}
+        <div class="rk-actions"><button class="btn primary" data-act="road" ${tr.v && (!tr.rank || tr.rank.chase.ok) ? '' : 'disabled'}>Plan road intercept</button></div>`);
+      el.querySelector('[data-act=road]').addEventListener('click', ev => { ev.stopPropagation(); C.planIntercept(tr); });
       el.addEventListener('click', () => {
         SM.tracker.select(tr.id, false);
         if (C.line) SM.map.removeLayer(C.line);
@@ -547,7 +555,144 @@
     }
   };
 
+  /* ---------- road routing & storm intercept ---------- */
+  C.mode = 'flank';
+  C.routeLayer = null;
+
+  function clearRoute() {
+    if (C.routeLayer) { SM.map.removeLayer(C.routeLayer); C.routeLayer = null; }
+    SM.$('#routeBox').hidden = true;
+  }
+  C.clearRoute = clearRoute;
+
+  function drawRoute(route, extras = []) {
+    if (C.routeLayer) SM.map.removeLayer(C.routeLayer);
+    const g = L.layerGroup();
+    const approx = route.source === 'approx';
+    L.polyline(route.geometry, { pane: 'routePane', color: '#22d3ee', weight: 9, opacity: 0.18, interactive: false }).addTo(g);
+    L.polyline(route.geometry, { pane: 'routePane', color: '#67e8f9', weight: 3.2, opacity: 0.95, dashArray: approx ? '8 7' : null, interactive: false }).addTo(g);
+    for (const x of extras) x.addTo(g);
+    C.routeLayer = g.addTo(SM.map);
+    if (!SM.$('#lyrRoads').checked && !approx) { SM.$('#lyrRoads').checked = true; setRoads(); }
+    SM.map.fitBounds(L.latLngBounds(route.geometry.concat(extras.filter(x => x.getLatLng).map(x => x.getLatLng()))).pad(0.15));
+  }
+
+  function stepText(s) {
+    if (s.type === 'waypoint') return SM.esc(s.name);
+    const verb = { depart: 'Start', arrive: 'Arrive', turn: 'Turn', 'new name': 'Continue', merge: 'Merge', 'on ramp': 'Take ramp', 'off ramp': 'Exit', fork: 'Keep', 'end of road': 'Turn', continue: 'Continue', roundabout: 'Roundabout', rotary: 'Roundabout', 'exit roundabout': 'Exit roundabout' }[s.type] || 'Continue';
+    const mod = s.modifier && !['depart', 'arrive'].includes(s.type) ? ' ' + s.modifier : '';
+    return `${verb}${mod}${s.name ? ' — <b>' + SM.esc(s.name) + '</b>' : ''}`;
+  }
+
+  function routeHTML(route) {
+    const safe = route.safety || {};
+    const src = route.source === 'osrm' ? 'Real roads (OSRM / OpenStreetMap)' : 'Approximate — no road data';
+    const steps = (route.steps || []).slice(0, 40).map(s => `<li>${stepText(s)}${s.distance_km != null ? `<span>${s.distance_km} km</span>` : ''}</li>`).join('');
+    return `
+      <div class="rt-stats">
+        <div><span>Drive</span><b>${Math.round(route.duration_min)} min</b></div>
+        <div><span>Distance</span><b>${Math.round(route.distance_km)} km</b></div>
+        <div><span>Arrive</span><b>${SM.localHM(Date.now() / 1000 + route.duration_min * 60)}</b></div>
+      </div>
+      <div class="rt-safe ${safe.ok ? 'ok' : 'bad'}">${safe.ok ? '✔ Checked against no-go zones every 0.5 km' + (safe.min_front_km != null && safe.min_front_km < 120 ? ` · closest front line ≈ ${safe.min_front_km} km` : '') : '⛔ ' + SM.esc(safe.reason || 'Route crosses a no-go area')}</div>
+      <div class="rt-src ${route.source}">${src}${route.via ? ' · via ' + SM.esc(route.via) : ''}</div>
+      ${route.approx_note ? `<p class="hint">${SM.esc(route.approx_note)}</p>` : ''}
+      ${steps ? `<details class="rt-steps"><summary>Directions (${route.steps.length} steps)</summary><ol>${steps}</ol></details>` : ''}`;
+  }
+
+  function zoneParams() {
+    return { front: SM.zones.front, border: SM.zones.border, speed: +SM.$('#chaseSpeed').value || 80 };
+  }
+
+  C.planIntercept = async function (tr) {
+    if (!C.pos) {
+      SM.toast('Set your position first (Chase → Track my GPS or Set position on map)', true, 6000);
+      SM.$('.rail-btn[data-panel=chase]').click();
+      return;
+    }
+    if (!tr.v) { SM.toast('Cell motion unknown yet — wait for another radar frame.', true); return; }
+    const box = SM.$('#routeBox');
+    box.hidden = false;
+    box.innerHTML = `<div class="rt-head"><b>Intercepting C${tr.id}…</b></div><p class="hint">Finding the earliest safe road intercept.</p>`;
+    if (!SM.$('#panel .pane[data-pane=chase]').classList.contains('active')) SM.$('.rail-btn[data-panel=chase]').click();
+    SM.loading('route', 'Planning intercept…');
+    try {
+      const r = Math.sqrt(tr.cur.area / Math.PI);
+      const x = await SM.api('intercept', Object.assign(zoneParams(), {
+        from: C.pos.join(','), lat: tr.cur.lat, lon: tr.cur.lon, u: tr.v[0].toFixed(2), v: tr.v[1].toFixed(2), r: r.toFixed(1), mode: C.mode,
+      }));
+      if (!x.ok) {
+        box.innerHTML = `<div class="rt-head"><b>C${tr.id}: no safe intercept</b><button class="icon-btn" id="rtClose">✕</button></div>
+          <div class="danger-banner">${SM.esc(x.reason)}</div>
+          ${x.enters_nogo_min ? `<p class="hint">⚠ The storm enters a no-go area in ~${x.enters_nogo_min} min.</p>` : ''}
+          ${(x.notes || []).map(n => `<p class="hint">${SM.esc(n)}</p>`).join('')}`;
+        SM.$('#rtClose').onclick = clearRoute;
+        return;
+      }
+      const tgt = L.marker(x.target, { pane: 'routePane', icon: L.divIcon({ className: '', iconSize: [22, 22], html: '<div class="tgt-icon">⊕</div>' }) })
+        .bindTooltip(`Intercept point · be here by ${SM.localHM(x.storm_ts - 600)}`, { direction: 'top' });
+      const storm = L.circleMarker(x.storm_at_target_time, { pane: 'routePane', radius: 9, color: '#f43f5e', weight: 2, fillOpacity: 0.2 })
+        .bindTooltip(`C${tr.id} forecast position at ${SM.localHM(x.storm_ts)}`, { direction: 'top' });
+      const link = L.polyline([x.target, x.storm_at_target_time], { pane: 'routePane', color: '#f43f5e', weight: 1.5, dashArray: '3 5' });
+      drawRoute(x.route, [tgt, storm, link]);
+      box.innerHTML = `
+        <div class="rt-head"><b>Intercept C${tr.id}</b><span class="rt-mode">${x.mode === 'flank' ? 'safe flank' : 'on track'}</span><button class="icon-btn" id="rtClose">✕</button></div>
+        <div class="rt-plan">Drive <b>${SM.geo.compass(x.approach_bearing)}</b> to ${SM.esc(x.target_place ? x.target_place.label : '')}. You arrive at <b>${SM.localHM(x.arrive_ts)}</b>; the storm (moving ${x.storm_heading_text} at ${SM.units.fmt('wind', x.storm_speed_kmh / 3.6, true)}) reaches the area around <b>${SM.localHM(x.storm_ts)}</b> — <b>${Math.round(x.margin_min)} min</b> margin.</div>
+        ${x.enters_nogo_min ? `<div class="danger-banner">⚠ Storm enters a no-go area in ~${x.enters_nogo_min} min — do not follow it there.</div>` : ''}
+        ${routeHTML(x.route)}`;
+      SM.$('#rtClose').onclick = clearRoute;
+    } catch (e) {
+      box.innerHTML = `<div class="rt-head"><b>Intercept failed</b><button class="icon-btn" id="rtClose">✕</button></div><div class="danger-banner">${SM.esc(e.message)}</div>`;
+      SM.$('#rtClose').onclick = clearRoute;
+    } finally { SM.loading('route'); }
+  };
+
+  C.routeTo = async function (lat, lon) {
+    if (!C.pos) { SM.toast('Set your position first', true); return; }
+    const box = SM.$('#routeBox');
+    box.hidden = false;
+    box.innerHTML = '<div class="rt-head"><b>Routing…</b></div>';
+    SM.loading('route', 'Finding a safe road route…');
+    try {
+      const r = await SM.api('route', Object.assign(zoneParams(), { from: C.pos.join(','), to: `${lat.toFixed(5)},${lon.toFixed(5)}` }));
+      const dest = L.circleMarker([lat, lon], { pane: 'routePane', radius: 7, color: '#67e8f9', weight: 2, fillOpacity: 0.3 });
+      drawRoute(r, [dest]);
+      box.innerHTML = `<div class="rt-head"><b>Route to ${SM.esc(SM.nearestCity(lat, lon).label)}</b><button class="icon-btn" id="rtClose">✕</button></div>${routeHTML(r)}`;
+    } catch (e) {
+      box.innerHTML = `<div class="rt-head"><b>No route</b><button class="icon-btn" id="rtClose">✕</button></div><div class="danger-banner">${SM.esc(e.message)}</div>`;
+    } finally {
+      SM.loading('route');
+      SM.$('#rtClose').onclick = clearRoute;
+    }
+  };
+
+  let roadLayer = null;
+  function setRoads() {
+    if (roadLayer) { SM.map.removeLayer(roadLayer); roadLayer = null; }
+    if (!SM.$('#lyrRoads').checked) return;
+    roadLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+      pane: 'roadPane', maxZoom: 18, opacity: 0.75, attribution: 'Roads © Esri, HERE, OpenStreetMap',
+    }).addTo(SM.map);
+  }
+
   function initChase() {
+    const fb = SM.$('#frontBuf'), bb = SM.$('#borderBuf');
+    fb.value = SM.zones.front; bb.value = SM.zones.border;
+    const lab = () => { SM.$('#frontBufV').textContent = fb.value + ' km'; SM.$('#borderBufV').textContent = bb.value + ' km'; };
+    lab();
+    for (const r of [fb, bb]) r.addEventListener('input', () => { lab(); SM.zones.setBuffers(+fb.value, +bb.value); });
+    SM.$$('#approachSeg button').forEach(b => b.addEventListener('click', () => {
+      C.mode = b.dataset.m;
+      SM.$$('#approachSeg button').forEach(x => x.classList.toggle('active', x === b));
+    }));
+    SM.$('#routePickBtn').addEventListener('click', () => {
+      C.routePicking = !C.routePicking;
+      SM.$('#routePickBtn').classList.toggle('on', C.routePicking);
+      SM.map.getContainer().style.cursor = C.routePicking ? 'crosshair' : '';
+      if (C.routePicking) SM.toast('Click the map to choose a destination');
+    });
+    SM.$('#lyrRoads').addEventListener('change', setRoads);
+    SM.$('#lyrZones').addEventListener('change', e => SM.zones.setEnabled(e.target.checked));
     SM.$('#gpsBtn').addEventListener('click', () => {
       if (C.watch != null) {
         navigator.geolocation.clearWatch(C.watch); C.watch = null;
@@ -669,6 +814,11 @@
         C.setPos(e.latlng.lat, e.latlng.lng, 'manual');
         return;
       }
+      if (C.routePicking) {
+        C.routePicking = false; SM.$('#routePickBtn').classList.remove('on'); SM.map.getContainer().style.cursor = '';
+        C.routeTo(e.latlng.lat, e.latlng.lng);
+        return;
+      }
       SM.drawer.open(e.latlng.lat, e.latlng.lng);
     });
   }
@@ -730,6 +880,8 @@
 
     SM.radar.init();
     SM.lightning.init();
+    SM.zones.init();
+    SM.ranking.init();
     SM.tracker.init();
 
     // first grid load: pick the current hour once the time axis is known

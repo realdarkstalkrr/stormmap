@@ -3,6 +3,7 @@
 import gzip
 import json
 import logging
+import math
 import mimetypes
 import threading
 import time
@@ -10,7 +11,7 @@ import traceback
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, config, demo, forecast, sources
+from . import __version__, config, demo, forecast, routing, sources, zones
 from .derived import PARAMS
 from .net import FetchError
 
@@ -47,6 +48,29 @@ def _float(qs, name):
         raise FetchError(f"Parameter '{name}' must be a number", 400)
 
 
+def _float_or(qs, name, default):
+    v = _q(qs, name)
+    if v in (None, ""):
+        return float(default)
+    try:
+        x = float(v)
+    except ValueError:
+        raise FetchError(f"Parameter '{name}' must be a number", 400)
+    if not math.isfinite(x):
+        raise FetchError(f"Parameter '{name}' must be finite", 400)
+    return x
+
+
+def _point(qs, name):
+    try:
+        lat, lon = (float(x) for x in _q(qs, name, required=True).split(","))
+    except ValueError:
+        raise FetchError(f"Parameter '{name}' must be 'lat,lon'", 400)
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise FetchError(f"Parameter '{name}' out of range", 400)
+    return lat, lon
+
+
 def route_api(path, qs):
     """Returns (status, content_type, body_bytes_or_obj, cache_seconds)."""
     if path == "/api/meta":
@@ -75,6 +99,20 @@ def route_api(path, qs):
         z, x, y = parts[0], parts[1], parts[2][:-4]
         body = sources.radar_tile(_q(qs, "path", required=True), z, x, y, _q(qs, "size", "256"), _q(qs, "color", "2"))
         return 200, "image/png", body, 600
+    if path == "/api/zones":
+        return 200, "json", zones.api_payload(_float_or(qs, "front", zones.DEFAULT_FRONT_KM), _float_or(qs, "border", zones.DEFAULT_BORDER_KM)), 300
+    if path == "/api/route":
+        a, b = _point(qs, "from"), _point(qs, "to")
+        return 200, "json", routing.safe_route(a, b, _float_or(qs, "front", zones.DEFAULT_FRONT_KM),
+                                               _float_or(qs, "border", zones.DEFAULT_BORDER_KM), _float_or(qs, "speed", 80)), 0
+    if path == "/api/intercept":
+        o = _point(qs, "from")
+        cell = {"lat": _float(qs, "lat"), "lon": _float(qs, "lon"), "u": _float_or(qs, "u", 0), "v": _float_or(qs, "v", 0),
+                "radius_km": _float_or(qs, "r", 10)}
+        mode = _q(qs, "mode", "flank")
+        return 200, "json", routing.intercept(o, cell, _float_or(qs, "front", zones.DEFAULT_FRONT_KM),
+                                              _float_or(qs, "border", zones.DEFAULT_BORDER_KM), _float_or(qs, "speed", 80),
+                                              mode if mode in ("flank", "track") else "flank"), 0
     if path == "/api/warnings":
         return 200, "json", sources.warnings(), 120
     if path == "/api/geocode":
@@ -171,6 +209,7 @@ def serve(host=None, port=None):
     port = port or config.PORT
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
+    zones.warm()
     if config.WARM_CACHE and not config.DEMO_MODE:
         def warm():
             try:

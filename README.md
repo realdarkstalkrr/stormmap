@@ -30,6 +30,9 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Storm cell tracker** | Finds cells (≥ 35–50 dBZ) in the radar mosaic and links them across frames. Motion comes from a least-squares fit, and tracks are extrapolated to +15/30/45/60 min with an uncertainty cone. Each cell gets a max-dBZ trend, area, a lightning rate (with a *lightning jump* flag), the model environment (SCP/STP/SHIP), flags for hail, supercell, tornado environment and fast motion, and the nearest town. |
 | **Lightning** | Live strikes from the Blitzortung.org community network, coloured by age. |
 | **Convective outlook** | Automated Day 1–3 categories (TSTM → MDT+), per-country summaries and ranked **chase targets**. Clicking a target flies the map there and opens the sounding for its peak hour. |
+| **Storm ranking** | Every tracked cell gets a 0–100 chase-potential score and a verdict: HIGH, GOOD, MARGINAL, NO POTENTIAL or DYING. The score has five parts shown as bars: intensity, trend, lightning, the model environment along the cell's forecast path (SCP/STP/SHIP/CAPE) and persistence. Each card lists the reasons in plain language and marks cells in, or heading into, no-go areas as *not chaseable*. |
+| **Road routing & intercept** | Routes follow real roads via OSRM (OpenStreetMap), and every route is checked against the no-go raster every 0.5 km. If the fastest road route crosses a forbidden area, the planner automatically re-routes through safe towns. **Plan intercept** works out where the storm will be when you can get there, targeting either its safer south-east flank or its track, with a 10-minute lead. It shows drive time, ETA, the margin before the storm arrives, turn-by-turn directions, and a warning if the storm heads into a no-go area. There is also an optional road-network overlay. |
+| **No-go zones (Ukraine)** | Occupied and contested territory comes from **[DeepStateMap](https://deepstatemap.live)**, a Ukrainian OSINT project with daily updates. It is rasterized at **0.01° (~1.1 × 0.7 km)**. On top of that come a configurable front-line safety buffer (default 30 km) and a UA–RU/BY border danger zone (default 20 km). Routes never cross the closed Ukraine–Russia/Belarus border. |
 | **Chase mode** | GPS tracking or a manually set position. For each tracked cell it shows distance and bearing, the closest point of approach, a *"cell hits you in N min"* alert, and an intercept solution (heading, distance and time at your road speed). |
 | **Warnings** | MeteoAlarm feeds for DE, PL, SK, RO, BG, FI and UA, with a convective filter. |
 | **Satellite** | EUMETSAT Meteosat IR 10.8, RGB Convection, RGB Airmass and WV 6.2 (WMS). |
@@ -45,6 +48,10 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | `STORMMAP_GRID_TTL` | `10800` | Seconds a model grid is cached (in memory and in `.cache/`) |
 | `STORMMAP_WARM` | `1` | Pre-fetches the default grid at startup |
 | `STORMMAP_DEMO` | `0` | Same as `--demo` |
+| `STORMMAP_OSRM_URL` | `https://router.project-osrm.org` | Road routing server. The public demo is for light personal use; run your own OSRM for heavy use. |
+| `STORMMAP_ZONES_URL` | DeepStateMap API | Source of the occupied-territory GeoJSON |
+| `STORMMAP_ZONES_FILE` | – | Local GeoJSON used instead of the live feed. Features are classified by name or fill colour. |
+| `STORMMAP_FRONT_BUFFER_KM` / `STORMMAP_BORDER_BUFFER_KM` | `30` / `20` | Default buffers. You can also change them per browser in Chase → No-go zones. |
 
 ### Open-Meteo free-tier budget
 
@@ -65,6 +72,8 @@ stormmap/derived.py    fast grid-point parameters from limited pressure levels
 stormmap/thermo.py     thermodynamic primitives (Bolton, RK4 pseudo-adiabats…)
 stormmap/sources.py    RainViewer radar proxy, MeteoAlarm parser, geocoding
 stormmap/geo.py        country polygons, grid masks, nearest town
+stormmap/zones.py      DeepStateMap no-go zones → 0.01° raster, buffers, closed-border rule
+stormmap/routing.py    OSRM routing + zone validation/detours, offline network, storm intercept
 stormmap/demo.py       synthetic trough/warm-sector weather, radar tiles, strikes
 static/js/field.js     bicubic field rendering, isolines + H/L centres, city values, barbs
 static/js/particles.js animated wind-flow particles
@@ -73,7 +82,7 @@ static/js/icons.js     SVG weather icons (WMO codes) and layer glyphs
 static/                index.html, css, other js (radar, lightning, tracker, Skew-T, drawer…)
 ```
 
-API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
+API endpoints: `/api/meta`, `/api/grid`, `/api/forecast`, `/api/zones`, `/api/route`, `/api/intercept`, `/api/timeline`, `/api/outlook`, `/api/sounding`, `/api/meteogram`, `/api/ensemble`, `/api/radar/frames`, `/api/radar/tile/{z}/{x}/{y}.png`, `/api/warnings`, `/api/geocode`.
 
 ## Tests
 
@@ -86,6 +95,8 @@ python3 -m unittest discover -s tests -t .
 - **Grid parameters are approximations.** Grid shear and SRH use pressure-level layer proxies: 10 m→925/850 hPa for about 0–1 km, and 10 m→500 hPa for about 0–6 km. For the full effective-layer analysis, click a point to open its sounding.
 - **Radar coverage is uneven.** Coverage over Russia, Belarus, Ukraine and Türkiye depends on what RainViewer receives. Where radar is missing, use the lightning layer and the model fields.
 - **Tracker reflectivity is estimated.** The tracker reads reflectivity back from the colours of the radar tiles, so dBZ values are approximate (±3–5 dBZ).
+- **No-go zones are safety aids, not official boundaries.** DeepStateMap is updated about once a day and the front moves, so keep the buffer generous and always follow official restrictions, curfews and checkpoints. The polygons are rasterized to about 1 km, but the source itself can lag reality by hours to days. If the feed is unreachable and nothing is cached, the app uses a deliberately over-blocking coarse fallback (±20 km) and flags it in red. The source name and map date are shown in Chase → No-go zones. Any polygon features that weren't classified are listed in `/api/zones` → `meta.ignored_polygon_names`, so a change in the source's naming scheme gets noticed.
+- **Offline routing is approximate.** Without a reachable routing server (and in `--demo`), routes use straight links between towns and are labelled *Approximate — no road data*.
 - **Blitzortung.org data is for private, non-commercial use.** GPS in browsers requires HTTPS or `localhost`. On plain HTTP from another device, use *Set position on map*.
 - **This is automated guidance.** Always check official forecasts and warnings, and chase responsibly.
 
