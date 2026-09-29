@@ -247,7 +247,7 @@
         const txt = fmt(lvl);
         const w = ctx.measureText(txt).width + 8;
         ctx.fillStyle = 'rgba(4,5,7,0.8)';
-        roundRect(ctx, x - w / 2, y - 7, w, 14, 4); ctx.fill();
+        roundRect(ctx, x - w / 2, y - 7, w, 14, 0); ctx.fill();
         ctx.fillStyle = '#e7eaf0';
         ctx.fillText(txt, x - w / 2 + 4, y + 3.5);
       }
@@ -332,8 +332,9 @@
         boxes.push(box);
         const col = SM.colorFor(key, v);
         ctx.fillStyle = 'rgba(6,8,12,0.78)';
-        roundRect(ctx, p.x - w / 2, p.y - h / 2, w, h, 6); ctx.fill();
-        if (col) { ctx.fillStyle = `rgb(${col[0] | 0},${col[1] | 0},${col[2] | 0})`; roundRect(ctx, p.x - w / 2, p.y - h / 2, 3, h, 1.5); ctx.fill(); }
+        roundRect(ctx, p.x - w / 2, p.y - h / 2, w, h, 0); ctx.fill();
+        ctx.strokeStyle = 'rgba(90,90,90,.9)'; ctx.lineWidth = 1; ctx.stroke();
+        if (col) { ctx.fillStyle = `rgb(${col[0] | 0},${col[1] | 0},${col[2] | 0})`; roundRect(ctx, p.x - w / 2, p.y - h / 2, 3, h, 0); ctx.fill(); }
         ctx.fillStyle = '#f4f6fa';
         ctx.font = '700 12px Inter, sans-serif';
         ctx.fillText(txt, p.x + 1, p.y + (showName ? -1 : 4));

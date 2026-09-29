@@ -86,6 +86,7 @@ static/js/field.js     bicubic field rendering, isolines + H/L centres, city val
 static/js/particles.js animated wind-flow particles
 static/js/units.js     unit preferences and conversions
 static/js/icons.js     SVG weather icons (WMO codes) and layer glyphs
+static/css/retro.css   2000s-style square, beveled black theme (loaded over app.css)
 static/                index.html, css, other js (radar, lightning, tracker, Skew-T, drawer…)
 ```
 
