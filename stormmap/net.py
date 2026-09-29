@@ -32,7 +32,11 @@ def fetch_bytes(url, timeout=30, retries=2, headers=None):
                 return r.read(), r.headers.get("Content-Type", "")
         except urllib.error.HTTPError as e:
             body = e.read()[:400].decode("utf-8", "replace")
-            last = FetchError(f"HTTP {e.code} from {urllib.parse.urlsplit(url).netloc}: {body}", e.code)
+            try:  # prefer the service's own short reason over raw JSON
+                reason = json.loads(body).get("reason") or body
+            except (ValueError, AttributeError):
+                reason = body
+            last = FetchError(f"{urllib.parse.urlsplit(url).netloc}: {reason}", e.code)
             if e.code in (429, 500, 502, 503, 504) and attempt < retries:
                 time.sleep(2 ** attempt * (3 if e.code == 429 else 1))
                 continue

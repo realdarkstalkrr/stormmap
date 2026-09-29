@@ -62,9 +62,9 @@ class RateBudget:
                 used_hour = sum(w for t, w in self.events if t > now - 3600)
                 used_day = sum(w for _, w in self.events)
                 if used_day + weight > config.RATE_PER_DAY:
-                    raise FetchError("Open-Meteo free daily call budget reached — wait, or set OPEN_METEO_API_KEY", 429)
+                    raise FetchError("Daily model-data limit reached — new data after the daily reset", 429)
                 if used_hour + weight > config.RATE_PER_HOUR:
-                    raise FetchError("Open-Meteo free hourly call budget reached — try again later", 429)
+                    raise FetchError("Hourly model-data limit reached — try again later", 429)
                 if used_min + weight <= config.RATE_PER_MIN or not minute:
                     self.events.append((now, weight))
                     return

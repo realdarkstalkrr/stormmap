@@ -210,7 +210,12 @@
     } catch (e) {
       if (id !== gridReq) return;
       SM.status('stModel', 'err', e.message);
-      SM.toast('Model data: ' + e.message, true, 8000);
+      // show each distinct error once per 10 min; the Model status pill keeps the details
+      const now = Date.now();
+      if (S.lastGridErr !== e.message || now - (S.lastGridErrAt || 0) > 600000) {
+        SM.toast('Model data: ' + e.message, true, 6000);
+        S.lastGridErr = e.message; S.lastGridErrAt = now;
+      }
     } finally {
       if (id === gridReq) SM.loading('grid');
     }
