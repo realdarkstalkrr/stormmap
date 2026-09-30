@@ -9,7 +9,8 @@ checked in O(1). On top of the occupied/contested areas the planner applies:
 * a border buffer (default 20 km) on both sides of the Ukraine–Russia/Belarus border,
 * a closed-border rule: no road link may cross between Ukraine and Russia/Belarus, or between
   Ukraine and Transnistria (Ukraine closed those checkpoints in 2022; Ukraine–Moldova crossings
-  elsewhere and Moldova–Transnistria crossings stay open).
+  elsewhere and Moldova–Transnistria crossings stay open), or between Türkiye and Armenia
+  (closed since 1993; travel goes via Georgia).
 
 If the live feed cannot be fetched and nothing is cached, a deliberately over-cautious
 coarse fallback polygon is used and flagged as such everywhere in the UI.
@@ -25,7 +26,7 @@ import time
 from array import array
 
 from . import config
-from .geo import countries
+from .geo import countries, country_at
 from .net import FetchError, fetch_json
 
 log = logging.getLogger("stormmap.zones")
@@ -45,11 +46,17 @@ DNLAT, DNLON = NLAT // 2, NLON // 2
 FREE, OCCUPIED, CONTESTED, FRONT_BUFFER, BORDER_BUFFER = 0, 1, 2, 3, 4
 CLASS_NAMES = {OCCUPIED: "Occupied territory", CONTESTED: "Contested / grey zone",
                FRONT_BUFFER: "Front-line safety buffer", BORDER_BUFFER: "Border danger zone"}
-C_OTHER, C_UA, C_RUBY, C_MD, C_TMR = 0, 1, 2, 3, 4
+C_OTHER, C_UA, C_RUBY, C_MD, C_TMR, C_TR, C_AM = 0, 1, 2, 3, 4, 5, 6
 CLOSED_BORDERS = {
     frozenset((C_UA, C_RUBY)): "Closed border (Ukraine ↔ Russia/Belarus)",
     frozenset((C_UA, C_TMR)): "Closed border (Ukraine ↔ Transnistria)",
+    frozenset((C_TR, C_AM)): "Closed border (Türkiye ↔ Armenia)",
 }
+# Türkiye–Armenia border area, outside the Ukraine raster: classified from the country polygons
+CAUCASUS = (38.5, 41.8, 41.5, 47.0)  # lat0, lat1, lon0, lon1
+CAUCASUS_CODES = {"TR": C_TR, "AM": C_AM}
+# Unassigned stretches shorter than this are slivers between outlines, not a third country
+GAP_KM = 5.0
 
 
 def closed_border(c1, c2):
@@ -450,6 +457,9 @@ class Mask:
 
     def country(self, lat, lon):
         if not (LAT0 <= lat < LAT1 and LON0 <= lon < LON1):
+            la0, la1, lo0, lo1 = CAUCASUS
+            if la0 <= lat < la1 and lo0 <= lon < lo1:
+                return CAUCASUS_CODES.get(country_at(lat, lon), C_OTHER)
             return C_OTHER
         j = int((lat - LAT0) / DRES)
         i = int((lon - LON0) / DRES)
@@ -466,38 +476,44 @@ class Mask:
             return None
         return float(self.d["dfront"][j * DNLON + i])
 
-    def _walk(self, a, b, step_km, prev):
-        """Sample a→b. Returns (bad_point or None, reason, last_country). `prev` is the last real
-        country seen before a; unassigned cells (sea, gaps between outlines) don't reset it, so a
-        route can't sneak across a closed border through a sliver that belongs to no country."""
+    def _walk(self, a, b, step_km, state):
+        """Sample a→b. Returns (bad_point or None, reason). `state` = [last_country, km_unassigned]
+        carries over between segments: a short unassigned stretch (a sliver between two outlines)
+        doesn't reset the last country, so it can't be used to sneak across a closed border, while
+        a longer one (a real third country such as Georgia or Poland) does."""
         dist = math.hypot((b[0] - a[0]) * 111.32, (b[1] - a[1]) * 111.32 * math.cos(math.radians(a[0])))
         n = max(1, int(dist / step_km))
-        last = prev
+        ds = dist / n
         for s in range(n + 1):
             f = s / n
             p = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
             c = self.cls(*p)
             if c:
-                return p, CLASS_NAMES.get(c, "No-go area"), last
+                return p, CLASS_NAMES.get(c, "No-go area")
             ctry = self.country(*p)
-            if ctry != C_OTHER:
-                why = closed_border(last, ctry) if last is not None else None
-                if why:
-                    return p, why, last
-                last = ctry
-        return None, None, last
+            if ctry == C_OTHER:
+                if s:
+                    state[1] += ds
+                if state[1] > GAP_KM:
+                    state[0] = None
+                continue
+            why = closed_border(state[0], ctry) if state[0] is not None else None
+            if why:
+                return p, why
+            state[0], state[1] = ctry, 0.0
+        return None, None
 
     def segment_ok(self, a, b, step_km=0.5):
         """True if the straight segment a→b (lat, lon) avoids no-go cells and closed borders."""
-        return self._walk(a, b, step_km, None)[0] is None
+        return self._walk(a, b, step_km, [None, 0.0])[0] is None
 
     def check_path(self, coords, step_km=0.5):
         """Validate a polyline [(lat, lon), …]. Returns dict(ok, violation, reason) or dict(ok, min_front_km)."""
         min_front = None
-        last = None
+        state = [None, 0.0]
         for k in range(len(coords) - 1):
             a, b = coords[k], coords[k + 1]
-            bad, why, last = self._walk(a, b, step_km, last)
+            bad, why = self._walk(a, b, step_km, state)
             if bad is not None:
                 return {"ok": False, "violation": [round(bad[0], 4), round(bad[1], 4)], "reason": why}
             fd = self.front_distance(*a)

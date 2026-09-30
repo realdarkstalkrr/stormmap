@@ -77,6 +77,17 @@ class RasterTests(unittest.TestCase):
         self.assertTrue(m.check_path([(48.45, 27.80), (48.43, 27.79)])["ok"])
         self.assertTrue(m.check_path([(47.02, 28.84), (46.84, 29.63)])["ok"])
 
+    def test_turkiye_armenia_border_closed(self):
+        m = zones.mask(30, 20)
+        self.assertEqual(m.country(40.60, 43.09), zones.C_TR)   # Kars
+        self.assertEqual(m.country(40.79, 43.85), zones.C_AM)   # Gyumri
+        r = m.check_path([(40.60, 43.09), (40.79, 43.85)])
+        self.assertFalse(r["ok"])
+        self.assertIn("Armenia", r["reason"])
+        # via Georgia is fine: a long stretch through a third country resets the border memory
+        via_georgia = [(40.60, 43.09), (41.10, 42.85), (41.55, 42.85), (41.40, 43.49), (41.265, 43.59), (40.79, 43.85)]
+        self.assertTrue(m.check_path(via_georgia)["ok"])
+
     def test_closed_border_pairs(self):
         self.assertTrue(zones.closed_border(zones.C_UA, zones.C_RUBY))
         self.assertTrue(zones.closed_border(zones.C_TMR, zones.C_UA))

@@ -61,10 +61,15 @@ COUNTRIES = {
     "MD": {"name": "Moldova", "bounds": (45.4, 48.5, 26.6, 30.2), "step": 0.15, "meteoalarm": "moldova"},
     "BG": {"name": "Bulgaria", "bounds": (41.2, 44.3, 22.3, 28.7), "step": 0.25, "meteoalarm": "bulgaria"},
     "SK": {"name": "Slovakia", "bounds": (47.7, 49.7, 16.8, 22.6), "step": 0.15, "meteoalarm": "slovakia"},
+    "HU": {"name": "Hungary", "bounds": (45.7, 48.6, 16.1, 22.9), "step": 0.25, "meteoalarm": "hungary"},
+    "CZ": {"name": "Czech Republic", "bounds": (48.5, 51.1, 12.1, 18.9), "step": 0.2, "meteoalarm": "czechia"},
     "PL": {"name": "Poland", "bounds": (49.0, 54.9, 14.1, 24.2), "step": 0.35, "meteoalarm": "poland"},
     "FI": {"name": "Finland", "bounds": (59.7, 70.1, 20.5, 31.6), "step": 0.5, "meteoalarm": "finland"},
     "DE": {"name": "Germany", "bounds": (47.2, 55.1, 5.8, 15.1), "step": 0.35, "meteoalarm": "germany"},
+    "LT": {"name": "Lithuania", "bounds": (53.9, 56.5, 20.9, 26.9), "step": 0.2, "meteoalarm": "lithuania"},
     "BY": {"name": "Belarus", "bounds": (51.2, 56.2, 23.1, 32.8), "step": 0.35, "meteoalarm": None},
+    # Armenia is not a MeteoAlarm member, so it has no warnings feed
+    "AM": {"name": "Armenia", "bounds": (38.8, 41.3, 43.4, 46.7), "step": 0.12, "meteoalarm": None},
 }
 
 # Whole coverage area ("ALL" region) — longitude clipped at the Urals.
@@ -84,9 +89,9 @@ MODELS = {
     "ukmo_global_deterministic_10km": {"name": "UK Met Office Global", "res": "10 km", "coverage": None, "group": "Global"},
     "jma_gsm": {"name": "JMA GSM", "res": "55 km", "coverage": None, "group": "Global"},
     "cma_grapes_global": {"name": "CMA GRAPES", "res": "15 km", "coverage": None, "group": "Global"},
-    "icon_eu": {"name": "DWD ICON-EU", "res": "7 km", "coverage": ["DE", "PL", "SK", "RO", "MD", "BG", "BY", "FI", "UA", "TR"], "group": "Regional"},
-    "icon_d2": {"name": "DWD ICON-D2", "res": "2 km", "coverage": ["DE"], "group": "Convection-allowing"},
-    "meteofrance_arpege_europe": {"name": "Météo-France ARPEGE Europe", "res": "11 km", "coverage": ["DE", "PL", "SK", "RO", "MD", "BG", "BY", "FI"], "group": "Regional"},
+    "icon_eu": {"name": "DWD ICON-EU", "res": "7 km", "coverage": ["DE", "PL", "CZ", "SK", "HU", "RO", "MD", "BG", "LT", "BY", "FI", "UA", "TR", "AM"], "group": "Regional"},
+    "icon_d2": {"name": "DWD ICON-D2", "res": "2 km", "coverage": ["DE", "CZ"], "group": "Convection-allowing"},
+    "meteofrance_arpege_europe": {"name": "Météo-France ARPEGE Europe", "res": "11 km", "coverage": ["DE", "PL", "CZ", "SK", "HU", "RO", "MD", "BG", "LT", "BY", "FI"], "group": "Regional"},
     "dmi_harmonie_arome_europe": {"name": "DMI HARMONIE-AROME", "res": "2 km", "coverage": ["DE", "PL", "FI"], "group": "Convection-allowing"},
     "metno_nordic": {"name": "MET Nordic", "res": "1 km", "coverage": ["FI"], "group": "Convection-allowing"},
 }

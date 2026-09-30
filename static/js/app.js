@@ -81,7 +81,7 @@
   /* ======================= Controls ======================= */
   function buildSelectors() {
     const rs = SM.$('#regionSel');
-    rs.appendChild(SM.el('option', { value: 'ALL' }, 'All 10 countries'));
+    rs.appendChild(SM.el('option', { value: 'ALL' }, `All ${Object.keys(SM.meta.countries).length} countries`));
     for (const [k, c] of Object.entries(SM.meta.countries)) rs.appendChild(SM.el('option', { value: k }, SM.esc(c.name)));
     const ms = SM.$('#modelSel');
     const groups = {};

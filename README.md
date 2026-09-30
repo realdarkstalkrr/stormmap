@@ -5,7 +5,7 @@
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/realdarkstalkrr/stormmap)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/realdarkstalkrr/stormmap)
 
-StormMap is a black, map-first meteorology app for storm chasing and convective analysis. It covers **Ukraine, Moldova, European Russia, Türkiye, Romania, Bulgaria, Slovakia, Poland, Finland, Germany and Belarus**.
+StormMap is a black, map-first meteorology app for storm chasing and convective analysis. It covers **Ukraine, Moldova, European Russia, Türkiye, Armenia, Romania, Bulgaria, Hungary, Slovakia, the Czech Republic, Poland, Lithuania, Finland, Germany and Belarus**.
 
 It runs as a single Python server over plain HTTP on **port 8000**. You don't need to install any packages or run a build step.
 
@@ -37,7 +37,7 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Convective outlook** | Automated Day 1–3 categories (TSTM → MDT+), per-country summaries and ranked **chase targets**. Clicking a target flies the map there and opens the sounding for its peak hour. |
 | **Storm ranking** | Every tracked cell gets a 0–100 chase-potential score and a verdict: HIGH, GOOD, MARGINAL, NO POTENTIAL or DYING. The score has five parts shown as bars: intensity, trend, lightning, the model environment along the cell's forecast path (SCP/STP/SHIP/CAPE) and persistence. Each card lists the reasons in plain language and marks cells in, or heading into, no-go areas as *not chaseable*. |
 | **Road routing & intercept** | Routes follow real roads via OSRM (OpenStreetMap), and every route is checked against the no-go raster every 0.5 km. If the fastest road route crosses a forbidden area, the planner automatically re-routes through safe towns. **Plan intercept** works out where the storm will be when you can get there, targeting either its safer south-east flank or its track, with a 10-minute lead. It shows drive time, ETA, the margin before the storm arrives, turn-by-turn directions, and a warning if the storm heads into a no-go area. There is also an optional road-network overlay. |
-| **No-go zones (Ukraine)** | Occupied and contested territory comes from **[DeepStateMap](https://deepstatemap.live)**, a Ukrainian OSINT project with daily updates. It is rasterized at **0.01° (~1.1 × 0.7 km)**. On top of that come a configurable front-line safety buffer (default 30 km) and a UA–RU/BY border danger zone (default 20 km). Routes never cross the closed Ukraine–Russia/Belarus border. Routes also never cross from Ukraine into **Transnistria**: Ukraine closed those checkpoints in 2022. Ukraine–Moldova crossings elsewhere (for example Palanca or Mohyliv-Podilskyi–Otaci) and Moldova–Transnistria crossings stay allowed. |
+| **No-go zones (Ukraine)** | Occupied and contested territory comes from **[DeepStateMap](https://deepstatemap.live)**, a Ukrainian OSINT project with daily updates. It is rasterized at **0.01° (~1.1 × 0.7 km)**. On top of that come a configurable front-line safety buffer (default 30 km) and a UA–RU/BY border danger zone (default 20 km). Routes never cross the closed Ukraine–Russia/Belarus border. Routes also never cross from Ukraine into **Transnistria**: Ukraine closed those checkpoints in 2022. Ukraine–Moldova crossings elsewhere (for example Palanca or Mohyliv-Podilskyi–Otaci) and Moldova–Transnistria crossings stay allowed. The **Türkiye–Armenia** border (closed since 1993) is also never crossed; routes go via Georgia. |
 | **Initiation & severe parameters** | Surface convergence and moisture-flux convergence (where storms fire), an initiation-potential index built from CAPE, weak CIN and convergence, and WMAXSHEAR (√(2·CAPE) × deep-layer shear, the European severe-storm discriminator used by ESSL). |
 | **Surface observations** | METAR station plots from NOAA's Aviation Weather Center: temperature, dew point, wind barb, sea-level pressure, sky cover, present weather and gusts. Click a station for the raw report. |
 | **Chase briefing** | A one-click text briefing covering risk by country, timing, the best target with its parameters, expected storm mode and hazards, sunset and civil dusk at the target, backup targets, the current top-ranked cells, warnings and no-go zone status. Copy it to share. |
@@ -52,7 +52,7 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Synoptic diagnostics** | 500 hPa absolute vorticity (drawn with 500 hPa height contours), 850 hPa temperature advection, and 850 hPa 2-D kinematic (Petterssen) frontogenesis, all computed from the model grid. |
 | **Model difference maps** | Shows any field as model A − model B on a diverging colour scale, for comparing guidance and seeing forecast uncertainty. |
 | **Chase mode** | GPS tracking or a manually set position. For each tracked cell it shows distance and bearing, the closest point of approach, a *"cell hits you in N min"* alert, and an intercept solution (heading, distance and time at your road speed). |
-| **Warnings** | MeteoAlarm feeds for DE, PL, SK, RO, MD, BG, FI and UA, with a convective filter. |
+| **Warnings** | MeteoAlarm feeds for DE, PL, CZ, SK, HU, RO, MD, BG, LT, FI and UA, with a convective filter. Armenia, Belarus, Russia and Türkiye have no MeteoAlarm feed. |
 | **Satellite** | EUMETSAT Meteosat IR 10.8, RGB Convection, RGB Airmass and WV 6.2 (WMS). |
 | **Air-raid alerts (Ukraine)** | Live oblast and raion alerts from [alerts.in.ua](https://alerts.in.ua), refreshed every 30 s and drawn on oblast boundaries from geoBoundaries. A full alert turns red and a partial one orange. You get a big banner and a sound alert when your position is in an oblast under alert. Every road route and intercept lists the alerted oblasts it passes through. |
 | **Mine-contamination areas** | Load an official GeoJSON of potentially contaminated territory (`STORMMAP_MINES_FILE`). The app then warns when you or a route are inside it: stay on the paved surface. It never pretends to be a clearance map. |
@@ -133,7 +133,7 @@ Open-Meteo's free tier allows 600 calls/min, 5 000/h and 10 000/day. A request w
 
 - The model grid uses a 22-variable core set, so each point costs 2.2 calls. Each region is capped at about 260 points, which is roughly 480–580 calls and fits inside one minute. A built-in pacer keeps the server under the limits. The browser also caches hours it has already loaded and prefetches the next ones, so the timeline plays back smoothly.
 - Grids are cached for 3 h on disk, so restarting the server doesn't spend the budget again.
-- "All 10 countries" therefore uses a coarse grid of about 2.3°. Select a single country to get a fine grid (0.17–0.66°).
+- "All countries" therefore uses a coarse grid of about 2.3°. Select a single country to get a fine grid (0.17–0.66°).
 
 ## Architecture
 
