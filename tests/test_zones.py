@@ -62,12 +62,41 @@ class RasterTests(unittest.TestCase):
         self.assertEqual(m.country(51.5, 38.0), zones.C_RUBY)       # Russia inside raster
         self.assertFalse(m.segment_ok((50.5, 35.5), (51.2, 37.2)))  # crosses closed UA–RU border
 
+    def test_transnistria_border_closed(self):
+        m = zones.mask(30, 20)
+        self.assertEqual(m.country(46.84, 29.63), zones.C_TMR)       # Tiraspol
+        self.assertEqual(m.country(47.02, 28.84), zones.C_MD)        # Chișinău
+        # Kuchurhan (UA) → Tiraspol: the checkpoint has been closed by Ukraine since 2022
+        r = m.check_path([(46.62, 29.95), (46.84, 29.63)])
+        self.assertFalse(r["ok"])
+        self.assertIn("Transnistria", r["reason"])
+        # hopping through a sliver between the two outlines is caught too
+        self.assertFalse(m.check_path([(47.97, 29.08), (47.97, 29.01), (47.90, 28.95)])["ok"])
+        # open crossings: Palanca (UA→MD), Mohyliv-Podilskyi→Otaci, and Moldova ↔ Transnistria
+        self.assertTrue(m.check_path([(46.48, 30.73), (46.42, 30.08), (46.55, 29.40), (47.02, 28.84)])["ok"])
+        self.assertTrue(m.check_path([(48.45, 27.80), (48.43, 27.79)])["ok"])
+        self.assertTrue(m.check_path([(47.02, 28.84), (46.84, 29.63)])["ok"])
+
+    def test_closed_border_pairs(self):
+        self.assertTrue(zones.closed_border(zones.C_UA, zones.C_RUBY))
+        self.assertTrue(zones.closed_border(zones.C_TMR, zones.C_UA))
+        self.assertIsNone(zones.closed_border(zones.C_UA, zones.C_MD))
+        self.assertIsNone(zones.closed_border(zones.C_MD, zones.C_TMR))
+        self.assertIsNone(zones.closed_border(zones.C_UA, zones.C_UA))
+
 
 class RoutingTests(unittest.TestCase):
     def test_safe_route_avoids_zones(self):
         r = routing.safe_route((50.45, 30.52), (48.46, 35.05), 30, 20)  # Kyiv → Dnipro
         self.assertTrue(r["safety"]["ok"])
         self.assertEqual(r["source"], "approx")
+        m = zones.mask(30, 20)
+        self.assertTrue(m.check_path([tuple(p) for p in r["geometry"]])["ok"])
+
+    def test_route_into_transnistria_goes_via_moldova(self):
+        r = routing.safe_route((46.48, 30.73), (46.84, 29.63), 30, 20)  # Odesa → Tiraspol
+        self.assertTrue(r["safety"]["ok"])
+        self.assertGreater(r["distance_km"], 120)  # not the ~80 km road over the closed Kuchurhan crossing
         m = zones.mask(30, 20)
         self.assertTrue(m.check_path([tuple(p) for p in r["geometry"]])["ok"])
 

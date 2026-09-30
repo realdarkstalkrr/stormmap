@@ -202,7 +202,7 @@ def _via_candidates(m, a, b, limit=5):
         if m.cls(la, lo):
             continue
         cw = m.country(la, lo)
-        if {ca, cw} == {zones.C_UA, zones.C_RUBY}:
+        if zones.closed_border(ca, cw):
             continue
         extra = haversine(*a, la, lo) + haversine(la, lo, *b) - direct
         if extra < max(40, direct * 0.9):

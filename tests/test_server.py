@@ -41,9 +41,20 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(h["ok"])
         self.assertTrue(h["demo"])
 
+    def test_moldova_region(self):
+        _, m = self.get_json("/api/meta")
+        self.assertEqual(m["countries"]["MD"]["name"], "Moldova")
+        self.assertTrue(m["countries"]["MD"]["warnings"])
+        self.assertIn("MD", m["models"]["icon_eu"]["coverage"])
+        self.assertIn("basemap", m)
+        _, g = self.get_json("/api/grid?model=icon_eu&region=MD&hour=12")
+        self.assertGreater(len(g["idx"]), 20)
+        top = g["grid"]["lat0"] + (g["grid"]["nlat"] - 1) * g["grid"]["step"]
+        self.assertTrue(45.0 <= g["grid"]["lat0"] and top <= 49.0)
+
     def test_meta(self):
         _, m = self.get_json("/api/meta")
-        self.assertEqual(set(m["countries"]), {"UA", "RU", "TR", "RO", "BG", "SK", "PL", "FI", "DE", "BY"})
+        self.assertEqual(set(m["countries"]), {"UA", "RU", "TR", "RO", "MD", "BG", "SK", "PL", "FI", "DE", "BY"})
         self.assertIn("ecmwf_ifs025", m["models"])
         self.assertTrue(m["demo"])
 
@@ -145,6 +156,8 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(geo.country_at(55.75, 37.62), "RU")
         self.assertEqual(geo.country_at(39.93, 32.86), "TR")
         self.assertEqual(geo.country_at(60.17, 24.94), "FI")
+        self.assertEqual(geo.country_at(47.02, 28.84), "MD")  # Chișinău
+        self.assertEqual(geo.country_at(46.84, 29.63), "MD")  # Tiraspol (internationally part of Moldova)
         self.assertIsNone(geo.country_at(48.2, 16.37))  # Vienna, outside coverage
 
     def test_grid_budget(self):

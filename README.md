@@ -5,7 +5,7 @@
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/realdarkstalkrr/stormmap)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/realdarkstalkrr/stormmap)
 
-StormMap is a black, map-first meteorology app for storm chasing and convective analysis. It covers **Ukraine, European Russia, Türkiye, Romania, Bulgaria, Slovakia, Poland, Finland, Germany and Belarus**.
+StormMap is a black, map-first meteorology app for storm chasing and convective analysis. It covers **Ukraine, Moldova, European Russia, Türkiye, Romania, Bulgaria, Slovakia, Poland, Finland, Germany and Belarus**.
 
 It runs as a single Python server over plain HTTP on **port 8000**. You don't need to install any packages or run a build step.
 
@@ -37,7 +37,7 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Convective outlook** | Automated Day 1–3 categories (TSTM → MDT+), per-country summaries and ranked **chase targets**. Clicking a target flies the map there and opens the sounding for its peak hour. |
 | **Storm ranking** | Every tracked cell gets a 0–100 chase-potential score and a verdict: HIGH, GOOD, MARGINAL, NO POTENTIAL or DYING. The score has five parts shown as bars: intensity, trend, lightning, the model environment along the cell's forecast path (SCP/STP/SHIP/CAPE) and persistence. Each card lists the reasons in plain language and marks cells in, or heading into, no-go areas as *not chaseable*. |
 | **Road routing & intercept** | Routes follow real roads via OSRM (OpenStreetMap), and every route is checked against the no-go raster every 0.5 km. If the fastest road route crosses a forbidden area, the planner automatically re-routes through safe towns. **Plan intercept** works out where the storm will be when you can get there, targeting either its safer south-east flank or its track, with a 10-minute lead. It shows drive time, ETA, the margin before the storm arrives, turn-by-turn directions, and a warning if the storm heads into a no-go area. There is also an optional road-network overlay. |
-| **No-go zones (Ukraine)** | Occupied and contested territory comes from **[DeepStateMap](https://deepstatemap.live)**, a Ukrainian OSINT project with daily updates. It is rasterized at **0.01° (~1.1 × 0.7 km)**. On top of that come a configurable front-line safety buffer (default 30 km) and a UA–RU/BY border danger zone (default 20 km). Routes never cross the closed Ukraine–Russia/Belarus border. |
+| **No-go zones (Ukraine)** | Occupied and contested territory comes from **[DeepStateMap](https://deepstatemap.live)**, a Ukrainian OSINT project with daily updates. It is rasterized at **0.01° (~1.1 × 0.7 km)**. On top of that come a configurable front-line safety buffer (default 30 km) and a UA–RU/BY border danger zone (default 20 km). Routes never cross the closed Ukraine–Russia/Belarus border. Routes also never cross from Ukraine into **Transnistria**: Ukraine closed those checkpoints in 2022. Ukraine–Moldova crossings elsewhere (for example Palanca or Mohyliv-Podilskyi–Otaci) and Moldova–Transnistria crossings stay allowed. |
 | **Initiation & severe parameters** | Surface convergence and moisture-flux convergence (where storms fire), an initiation-potential index built from CAPE, weak CIN and convergence, and WMAXSHEAR (√(2·CAPE) × deep-layer shear, the European severe-storm discriminator used by ESSL). |
 | **Surface observations** | METAR station plots from NOAA's Aviation Weather Center: temperature, dew point, wind barb, sea-level pressure, sky cover, present weather and gusts. Click a station for the raw report. |
 | **Chase briefing** | A one-click text briefing covering risk by country, timing, the best target with its parameters, expected storm mode and hazards, sunset and civil dusk at the target, backup targets, the current top-ranked cells, warnings and no-go zone status. Copy it to share. |
@@ -52,7 +52,7 @@ Requires Python ≥ 3.9. Leaflet and Chart.js are bundled in `static/vendor/`. T
 | **Synoptic diagnostics** | 500 hPa absolute vorticity (drawn with 500 hPa height contours), 850 hPa temperature advection, and 850 hPa 2-D kinematic (Petterssen) frontogenesis, all computed from the model grid. |
 | **Model difference maps** | Shows any field as model A − model B on a diverging colour scale, for comparing guidance and seeing forecast uncertainty. |
 | **Chase mode** | GPS tracking or a manually set position. For each tracked cell it shows distance and bearing, the closest point of approach, a *"cell hits you in N min"* alert, and an intercept solution (heading, distance and time at your road speed). |
-| **Warnings** | MeteoAlarm feeds for DE, PL, SK, RO, BG, FI and UA, with a convective filter. |
+| **Warnings** | MeteoAlarm feeds for DE, PL, SK, RO, MD, BG, FI and UA, with a convective filter. |
 | **Satellite** | EUMETSAT Meteosat IR 10.8, RGB Convection, RGB Airmass and WV 6.2 (WMS). |
 | **Air-raid alerts (Ukraine)** | Live oblast and raion alerts from [alerts.in.ua](https://alerts.in.ua), refreshed every 30 s and drawn on oblast boundaries from geoBoundaries. A full alert turns red and a partial one orange. You get a big banner and a sound alert when your position is in an oblast under alert. Every road route and intercept lists the alerted oblasts it passes through. |
 | **Mine-contamination areas** | Load an official GeoJSON of potentially contaminated territory (`STORMMAP_MINES_FILE`). The app then warns when you or a route are inside it: stay on the paved surface. It never pretends to be a clearance map. |
@@ -97,6 +97,7 @@ Secrets such as `ALERTS_IN_UA_TOKEN`, `STORMMAP_ADMIN_TOKEN` and `TELEGRAM_BOT_T
 | `STORMMAP_ZONES_URL` | DeepStateMap API | Source of the occupied-territory GeoJSON |
 | `STORMMAP_ZONES_FILE` | – | Local GeoJSON used instead of the live feed. Features are classified by name or fill colour. |
 | `STORMMAP_FRONT_BUFFER_KM` / `STORMMAP_BORDER_BUFFER_KM` | `30` / `20` | Default buffers. You can also change them per browser in Chase → No-go zones. |
+| `CARTO_API_KEY` | – | Optional. By default the base map uses Esri's public Dark Gray Canvas tiles, which need no key. CARTO's dark basemaps now require a key ([carto.com/basemaps/apikey](https://carto.com/basemaps/apikey)); set one to use them instead. It is sent to browsers, so restrict it to your domain. |
 | `ALERTS_IN_UA_TOKEN` | – | Free alerts.in.ua API token (request it at alerts.in.ua). Without it the air-raid layer is off. |
 | `STORMMAP_OBLASTS_FILE` | – | Local oblast-boundary GeoJSON. Otherwise the app downloads geoBoundaries ADM1 once and caches it. |
 | `STORMMAP_MINES_FILE` | – | GeoJSON of potentially mine-contaminated areas (or put it at `static/data/mines.geojson`) |
@@ -189,4 +190,4 @@ python3 -m unittest discover -s tests -t .
 - **The Ukrainian translation is a first pass.** Corrections from native-speaking forecasters are welcome (`static/js/i18n.js`).
 - **This is automated guidance.** Always check official forecasts and warnings, and chase responsibly.
 
-Data: Open-Meteo (CC BY 4.0), RainViewer, Blitzortung.org, EUMETSAT, MeteoAlarm, © OpenStreetMap contributors, © CARTO, Esri. Borders: Natural Earth via world-atlas, with Crimea shown as part of Ukraine.
+Data: Open-Meteo (CC BY 4.0), RainViewer, Blitzortung.org, EUMETSAT, MeteoAlarm, © OpenStreetMap contributors, Esri (and CARTO when a key is set). Borders: Natural Earth via world-atlas, with Crimea shown as part of Ukraine; the Transnistria outline is from Natural Earth 1:10m breakaway areas.

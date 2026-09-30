@@ -16,12 +16,22 @@
   }, 300);
 
   /* ======================= Map ======================= */
+  /* Base maps. Esri's public tile services need no key. CARTO's basemaps now require an API key,
+   * so they are only used when the server is given one (CARTO_API_KEY). */
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+  const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OSM</a>';
+  const cartoKey = () => SM.meta && SM.meta.basemap && SM.meta.basemap.carto_key;
+  const carto = (variant, opts = {}) => L.tileLayer(`https://{s}.basemaps.cartocdn.com/${variant}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoKey())}`,
+    Object.assign({ subdomains: 'abcd', maxZoom: 19, attribution: `${OSM_ATTR} © <a href="https://carto.com/attributions">CARTO</a>` }, opts));
+  const esri = (service, opts = {}) => L.tileLayer(ESRI + service + '/MapServer/tile/{z}/{y}/{x}', Object.assign({ maxZoom: 19 }, opts));
   const BASES = {
-    dark: () => L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/attributions">CARTO</a>' }),
-    terrain: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, attribution: 'Hillshade © Esri' }),
-    roads: () => L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a> © <a href="https://carto.com/attributions">CARTO</a>' }),
-    sat: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: 'Imagery © Esri' }),
+    dark: () => cartoKey() ? carto('dark_nolabels') : esri('Canvas/World_Dark_Gray_Base', { maxNativeZoom: 16, attribution: 'Base map © Esri, HERE, Garmin, © OpenStreetMap contributors' }),
+    terrain: () => esri('Elevation/World_Hillshade_Dark', { maxNativeZoom: 16, attribution: 'Hillshade © Esri' }),
+    roads: () => cartoKey() ? carto('dark_all') : esri('World_Street_Map', { className: 'tiles-dark', attribution: 'Roads © Esri, HERE, Garmin, © OpenStreetMap contributors' }),
+    sat: () => esri('World_Imagery', { maxNativeZoom: 18, attribution: 'Imagery © Esri' }),
   };
+  const labels = () => cartoKey() ? carto('dark_only_labels', { pane: 'labelsPane', attribution: '' })
+    : esri('Canvas/World_Dark_Gray_Reference', { pane: 'labelsPane', maxNativeZoom: 16 });
   let baseLayer = null, labelLayer = null, satLayer = null;
 
   function initMap() {
@@ -40,7 +50,7 @@
     map.getPane('labelsPane').style.pointerEvents = 'none';
     map.getPane('bordersPane').style.pointerEvents = 'none';
     setBase('dark');
-    labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', pane: 'labelsPane', maxZoom: 19 }).addTo(map);
+    labelLayer = labels().addTo(map);
   }
 
   function setBase(key) {

@@ -32,6 +32,8 @@ def _meta():
         "server_time": int(time.time()),
         "grid_extended": config.GRID_EXTENDED, "api_key": bool(config.OPEN_METEO_KEY),
         "budget": forecast.budget.usage(),
+        # a CARTO key is a public, referrer-restricted browser key, so it is safe to hand out
+        "basemap": {"carto_key": config.CARTO_API_KEY or None},
     }
 
 

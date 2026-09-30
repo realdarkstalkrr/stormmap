@@ -7,7 +7,9 @@ checked in O(1). On top of the occupied/contested areas the planner applies:
 
 * a front-line safety buffer (default 30 km) around occupied and contested territory,
 * a border buffer (default 20 km) on both sides of the Ukraine–Russia/Belarus border,
-* a closed-border rule: no road link may cross between Ukraine and Russia/Belarus.
+* a closed-border rule: no road link may cross between Ukraine and Russia/Belarus, or between
+  Ukraine and Transnistria (Ukraine closed those checkpoints in 2022; Ukraine–Moldova crossings
+  elsewhere and Moldova–Transnistria crossings stay open).
 
 If the live feed cannot be fetched and nothing is cached, a deliberately over-cautious
 coarse fallback polygon is used and flagged as such everywhere in the UI.
@@ -43,7 +45,31 @@ DNLAT, DNLON = NLAT // 2, NLON // 2
 FREE, OCCUPIED, CONTESTED, FRONT_BUFFER, BORDER_BUFFER = 0, 1, 2, 3, 4
 CLASS_NAMES = {OCCUPIED: "Occupied territory", CONTESTED: "Contested / grey zone",
                FRONT_BUFFER: "Front-line safety buffer", BORDER_BUFFER: "Border danger zone"}
-C_OTHER, C_UA, C_RUBY = 0, 1, 2
+C_OTHER, C_UA, C_RUBY, C_MD, C_TMR = 0, 1, 2, 3, 4
+CLOSED_BORDERS = {
+    frozenset((C_UA, C_RUBY)): "Closed border (Ukraine ↔ Russia/Belarus)",
+    frozenset((C_UA, C_TMR)): "Closed border (Ukraine ↔ Transnistria)",
+}
+
+
+def closed_border(c1, c2):
+    """Reason string if travel between country classes c1 and c2 is impossible, else None."""
+    return CLOSED_BORDERS.get(frozenset((c1, c2))) if c1 != c2 else None
+
+
+def _transnistria():
+    """Transnistria outline (Natural Earth 1:10m breakaway areas), as lists of rings of (lon, lat)."""
+    try:
+        with open(config.STATIC_DIR / "data" / "transnistria.geojson", encoding="utf-8") as f:
+            gj = json.load(f)
+    except (OSError, ValueError) as e:
+        log.warning("Transnistria outline unavailable: %s", e)
+        return []
+    out = []
+    for feat in gj["features"]:
+        g = feat["geometry"]
+        out += g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]
+    return out
 
 DEFAULT_FRONT_KM = float(os.environ.get("STORMMAP_FRONT_BUFFER_KM", "30"))
 DEFAULT_BORDER_KM = float(os.environ.get("STORMMAP_BORDER_BUFFER_KM", "20"))
@@ -287,12 +313,18 @@ def _build():
     for cls, rings in polys:
         _fill_polygon(zone, NLAT, NLON, LAT0, LON0, RES, rings, cls)
 
-    # coarse country raster (UA vs RU/BY) for the closed-border rule and border buffer
+    # coarse country raster for the closed-border rules and the border buffer.
+    # Ukraine is filled last so it wins where outlines from different sources overlap.
     country = bytearray(DNLAT * DNLON)
     geo = countries()
-    for code, val in (("UA", C_UA), ("RU", C_RUBY), ("BY", C_RUBY)):
+    for code, val in (("MD", C_MD), ("RU", C_RUBY), ("BY", C_RUBY)):
         for poly in geo.get(code, []):
             _fill_polygon(country, DNLAT, DNLON, LAT0, LON0, DRES, poly["rings"], val)
+    for rings in _transnistria():
+        _fill_polygon(country, DNLAT, DNLON, LAT0, LON0, DRES, rings, C_TMR)
+    for poly in geo.get("UA", []):
+        _fill_polygon(country, DNLAT, DNLON, LAT0, LON0, DRES, poly["rings"], C_UA)
+    _close_tmr_gap(country)
 
     # coarse seeds: any occupied/contested fine cell inside the coarse cell
     zseed = bytearray(DNLAT * DNLON)
@@ -334,6 +366,34 @@ def _build():
         for cls, rings in polys]}
     return {"zone": zone, "country": country, "dfront": dfront, "dborder": dborder,
             "meta": meta, "geojson": geojson, "masks": {}}
+
+
+def _close_tmr_gap(country, radius=2, passes=3):
+    """The Transnistria outline (1:10m) and the Ukraine border (1:50m) don't match exactly, which
+    leaves a sliver of "Moldova" cells between them. A route could hop UA → sliver → Transnistria
+    without ever stepping directly from Ukraine into Transnistria, so grow Transnistria into
+    Moldova cells that lie within `radius` cells of Ukraine."""
+    def near_ua(j, i):
+        for jj in range(max(0, j - radius), min(DNLAT, j + radius + 1)):
+            row = jj * DNLON
+            for ii in range(max(0, i - radius), min(DNLON, i + radius + 1)):
+                if country[row + ii] == C_UA:
+                    return True
+        return False
+    for _ in range(passes):
+        grow = []
+        for j in range(DNLAT):
+            for i in range(DNLON):
+                k = j * DNLON + i
+                if country[k] != C_MD:
+                    continue
+                if any(0 <= j + dj < DNLAT and 0 <= i + di < DNLON and country[(j + dj) * DNLON + i + di] == C_TMR
+                       for dj, di in ((0, 1), (0, -1), (1, 0), (-1, 0))) and near_ua(j, i):
+                    grow.append(k)
+        if not grow:
+            break
+        for k in grow:
+            country[k] = C_TMR
 
 
 def _cell_area_mid():
@@ -406,40 +466,40 @@ class Mask:
             return None
         return float(self.d["dfront"][j * DNLON + i])
 
-    def segment_ok(self, a, b, step_km=0.5):
-        """True if the straight segment a→b (lat, lon) avoids no-go cells and closed borders."""
+    def _walk(self, a, b, step_km, prev):
+        """Sample a→b. Returns (bad_point or None, reason, last_country). `prev` is the last real
+        country seen before a; unassigned cells (sea, gaps between outlines) don't reset it, so a
+        route can't sneak across a closed border through a sliver that belongs to no country."""
         dist = math.hypot((b[0] - a[0]) * 111.32, (b[1] - a[1]) * 111.32 * math.cos(math.radians(a[0])))
         n = max(1, int(dist / step_km))
-        ca = self.country(*a)
+        last = prev
         for s in range(n + 1):
             f = s / n
-            lat = a[0] + (b[0] - a[0]) * f
-            lon = a[1] + (b[1] - a[1]) * f
-            if self.cls(lat, lon):
-                return False
-            c = self.country(lat, lon)
-            if {ca, c} == {C_UA, C_RUBY}:
-                return False  # UA ↔ RU/BY border is closed
-        return True
+            p = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+            c = self.cls(*p)
+            if c:
+                return p, CLASS_NAMES.get(c, "No-go area"), last
+            ctry = self.country(*p)
+            if ctry != C_OTHER:
+                why = closed_border(last, ctry) if last is not None else None
+                if why:
+                    return p, why, last
+                last = ctry
+        return None, None, last
+
+    def segment_ok(self, a, b, step_km=0.5):
+        """True if the straight segment a→b (lat, lon) avoids no-go cells and closed borders."""
+        return self._walk(a, b, step_km, None)[0] is None
 
     def check_path(self, coords, step_km=0.5):
-        """Validate a polyline [(lat, lon), …]. Returns dict(ok, first_violation, min_front_km)."""
+        """Validate a polyline [(lat, lon), …]. Returns dict(ok, violation, reason) or dict(ok, min_front_km)."""
         min_front = None
+        last = None
         for k in range(len(coords) - 1):
             a, b = coords[k], coords[k + 1]
-            if not self.segment_ok(a, b, step_km):
-                # locate the first offending sample for the UI
-                dist = math.hypot((b[0] - a[0]) * 111.32, (b[1] - a[1]) * 111.32 * math.cos(math.radians(a[0])))
-                n = max(1, int(dist / step_km))
-                bad = a
-                for s in range(n + 1):
-                    p = (a[0] + (b[0] - a[0]) * s / n, a[1] + (b[1] - a[1]) * s / n)
-                    if self.cls(*p) or {self.country(*a), self.country(*p)} == {C_UA, C_RUBY}:
-                        bad = p
-                        break
-                c = self.cls(*bad)
-                return {"ok": False, "violation": [round(bad[0], 4), round(bad[1], 4)],
-                        "reason": CLASS_NAMES.get(c, "Closed border (Ukraine ↔ Russia/Belarus)")}
+            bad, why, last = self._walk(a, b, step_km, last)
+            if bad is not None:
+                return {"ok": False, "violation": [round(bad[0], 4), round(bad[1], 4)], "reason": why}
             fd = self.front_distance(*a)
             if fd is not None and (min_front is None or fd < min_front):
                 min_front = fd

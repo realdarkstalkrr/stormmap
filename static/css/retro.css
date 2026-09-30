@@ -329,3 +329,6 @@ input[type=range] { accent-color: var(--accent); }
 #statusBar { flex-wrap: nowrap; }
 .rk-actions { flex-wrap: wrap; }
 .rk-actions .btn { flex: 1 1 auto; min-width: 0; white-space: normal; }
+
+/* light street tiles recoloured to match the black theme */
+.tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.95) saturate(.55); }

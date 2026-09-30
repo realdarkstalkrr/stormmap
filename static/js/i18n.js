@@ -65,8 +65,8 @@
     "Target the storm's right/south-east flank, away from the hail core": 'Ціль — правий (південно-східний) фланг грози, подалі від ядра граду',
     "Target the storm's forecast position": 'Ціль — прогнозна позиція грози',
     'Front-line buffer': 'Буфер від лінії фронту', 'Border zone (UA–RU/BY)': 'Прикордонна зона (UA–RU/BY)',
-    'Routes never enter occupied or contested territory, the buffers above, or cross the closed Ukraine–Russia/Belarus border. Always follow official restrictions, curfews and checkpoints.':
-      'Маршрути не заходять на окуповану чи спірну територію, у буферні зони та не перетинають закритий кордон з росією/білоруссю. Завжди дотримуйтесь офіційних обмежень, комендантської години та вимог блокпостів.',
+    'Routes never enter occupied or contested territory or the buffers above, and never cross Ukraine’s closed borders with Russia, Belarus and Transnistria. Ukraine–Moldova crossings elsewhere stay open. Always follow official restrictions, curfews and checkpoints.':
+      'Маршрути не заходять на окуповану чи спірну територію та в буферні зони й не перетинають закриті кордони України з росією, білоруссю та Придністров’ям. Інші пункти пропуску на кордоні з Молдовою працюють. Завжди дотримуйтесь офіційних обмежень, комендантської години та вимог блокпостів.',
     'Nearby cells': 'Комірки поруч', 'Alerts': 'Сповіщення', 'Chase log': 'Журнал погоні',
     'Set your position to get distances, ETAs and intercept solutions for tracked cells.': 'Вкажіть свою позицію, щоб отримати відстані, час підходу та рішення для перехоплення.',
     'No tracked cells within 400 km.': 'Немає комірок у радіусі 400 км.', 'Loading…': 'Завантаження…',
@@ -102,7 +102,7 @@
     'close analysis': 'закрити аналіз',
     'Automated guidance only — always cross-check official forecasts and warnings. Stay safe on the road.':
       'Лише автоматична оцінка — завжди звіряйтеся з офіційними прогнозами та попередженнями. Бережіть себе на дорозі.',
-    'Units': 'Одиниці', 'Language': 'Мова', 'Interface': 'Інтерфейс',
+    'Units': 'Одиниці', 'Language': 'Мова', 'Interface': 'Інтерфейс', 'Moldova': 'Молдова',
     // quick layer bar
     'Rain': 'Опади', 'Clouds': 'Хмарність', 'Humidity': 'Вологість', 'Storms': 'Грози', 'Initiation': 'Зародження',
     'Synoptic': 'Синоптика', 'Shear': 'Зсув вітру', 'Surface': 'Біля землі', 'Total': 'Загальна', 'Sea level': 'Рівень моря',

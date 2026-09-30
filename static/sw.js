@@ -2,8 +2,9 @@
  * Requires HTTPS (or localhost). Bump VERSION when the shell changes. */
 'use strict';
 
-const VERSION = 'sm-v1';
-const SHELL = `${VERSION}-shell`, API = 'sm-api', TILES = 'sm-tiles';
+const VERSION = 'sm-v2';
+// v2: tile cache renamed so CARTO "API key required" tiles cached by v1 are dropped
+const SHELL = `${VERSION}-shell`, API = 'sm-api', TILES = 'sm-tiles-v2';
 const TILE_MAX = 6000;
 const SHELL_FILES = [
   '/', 'index.html', 'manifest.webmanifest', 'css/app.css', 'css/retro.css',
@@ -23,7 +24,7 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.endsWith('-shell') && k !== SHELL).map(k => caches.delete(k))))
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => (k.endsWith('-shell') && k !== SHELL) || (k.startsWith('sm-tiles') && k !== TILES)).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 

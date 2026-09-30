@@ -14,6 +14,10 @@ PORT = int(os.environ.get("STORMMAP_PORT") or os.environ.get("PORT") or "8000")
 TLS_CERT = os.environ.get("STORMMAP_TLS_CERT", "")
 TLS_KEY = os.environ.get("STORMMAP_TLS_KEY", "")
 
+# Base maps: Esri's public tiles by default. CARTO dark basemaps now need an API key
+# (carto.com/basemaps/apikey); set one to use them instead.
+CARTO_API_KEY = os.environ.get("CARTO_API_KEY", "")
+
 # Open-Meteo endpoints. A commercial API key can be supplied to lift rate limits.
 OPEN_METEO_KEY = os.environ.get("OPEN_METEO_API_KEY", "")
 OPEN_METEO_FORECAST = os.environ.get(
@@ -54,6 +58,7 @@ COUNTRIES = {
     "RU": {"name": "Russia (European)", "bounds": (41.1, 70.0, 19.6, 60.0), "step": 1.0, "meteoalarm": None},
     "TR": {"name": "Türkiye", "bounds": (35.8, 42.2, 25.6, 44.9), "step": 0.5, "meteoalarm": None},
     "RO": {"name": "Romania", "bounds": (43.6, 48.3, 20.2, 29.8), "step": 0.35, "meteoalarm": "romania"},
+    "MD": {"name": "Moldova", "bounds": (45.4, 48.5, 26.6, 30.2), "step": 0.15, "meteoalarm": "moldova"},
     "BG": {"name": "Bulgaria", "bounds": (41.2, 44.3, 22.3, 28.7), "step": 0.25, "meteoalarm": "bulgaria"},
     "SK": {"name": "Slovakia", "bounds": (47.7, 49.7, 16.8, 22.6), "step": 0.15, "meteoalarm": "slovakia"},
     "PL": {"name": "Poland", "bounds": (49.0, 54.9, 14.1, 24.2), "step": 0.35, "meteoalarm": "poland"},
@@ -79,9 +84,9 @@ MODELS = {
     "ukmo_global_deterministic_10km": {"name": "UK Met Office Global", "res": "10 km", "coverage": None, "group": "Global"},
     "jma_gsm": {"name": "JMA GSM", "res": "55 km", "coverage": None, "group": "Global"},
     "cma_grapes_global": {"name": "CMA GRAPES", "res": "15 km", "coverage": None, "group": "Global"},
-    "icon_eu": {"name": "DWD ICON-EU", "res": "7 km", "coverage": ["DE", "PL", "SK", "RO", "BG", "BY", "FI", "UA", "TR"], "group": "Regional"},
+    "icon_eu": {"name": "DWD ICON-EU", "res": "7 km", "coverage": ["DE", "PL", "SK", "RO", "MD", "BG", "BY", "FI", "UA", "TR"], "group": "Regional"},
     "icon_d2": {"name": "DWD ICON-D2", "res": "2 km", "coverage": ["DE"], "group": "Convection-allowing"},
-    "meteofrance_arpege_europe": {"name": "Météo-France ARPEGE Europe", "res": "11 km", "coverage": ["DE", "PL", "SK", "RO", "BG", "BY", "FI"], "group": "Regional"},
+    "meteofrance_arpege_europe": {"name": "Météo-France ARPEGE Europe", "res": "11 km", "coverage": ["DE", "PL", "SK", "RO", "MD", "BG", "BY", "FI"], "group": "Regional"},
     "dmi_harmonie_arome_europe": {"name": "DMI HARMONIE-AROME", "res": "2 km", "coverage": ["DE", "PL", "FI"], "group": "Convection-allowing"},
     "metno_nordic": {"name": "MET Nordic", "res": "1 km", "coverage": ["FI"], "group": "Convection-allowing"},
 }
