@@ -332,3 +332,11 @@ input[type=range] { accent-color: var(--accent); }
 
 /* light street tiles recoloured to match the black theme */
 .tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.95) saturate(.55); }
+
+/* Ventusky-style radar colour bar in the radar control bar */
+.radar-scale { position: relative; width: 170px; height: 22px; flex: 0 0 auto; margin: 0 30px 0 6px; }
+.radar-scale i { position: absolute; left: 0; right: 0; top: 2px; height: 7px; border: 1px solid #000; }
+.radar-scale span { position: absolute; left: 0; right: 0; top: 10px; height: 11px; }
+.radar-scale b { position: absolute; transform: translateX(-50%); font: 9px var(--mono); color: var(--muted); font-weight: normal; }
+.radar-scale em { position: absolute; right: -28px; top: 0; font: 9px var(--mono); color: var(--dim); font-style: normal; }
+@media (max-width: 820px) { .radar-scale { display: none; } }

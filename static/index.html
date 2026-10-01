@@ -100,6 +100,10 @@
           <input type="range" class="op" data-layer="radar" min="0" max="100" value="85" title="Opacity">
         </div>
         <div class="row">
+          <span class="row-label">Radar colours</span>
+          <select id="radarScheme" class="mini"><option value="ventusky">Ventusky style</option><option value="rainviewer">RainViewer original</option></select>
+        </div>
+        <div class="row">
           <label class="toggle"><input type="checkbox" id="lyrLightning" checked><span></span>Lightning (live)</label>
         </div>
         <div class="row">
@@ -306,6 +310,7 @@
       <button class="icon-btn" id="radarPlay" title="Play radar loop (R)">▶</button>
       <input type="range" id="radarSlider" min="0" max="0" value="0">
       <span id="radarTime" class="mono">--:--</span>
+      <div id="radarScale" class="radar-scale" title="Reflectivity (dBZ), estimated from the radar image colours"></div>
       <span class="tag">RADAR</span>
     </div>
 

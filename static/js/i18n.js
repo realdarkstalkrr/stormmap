@@ -102,7 +102,7 @@
     'close analysis': 'закрити аналіз',
     'Automated guidance only — always cross-check official forecasts and warnings. Stay safe on the road.':
       'Лише автоматична оцінка — завжди звіряйтеся з офіційними прогнозами та попередженнями. Бережіть себе на дорозі.',
-    'Units': 'Одиниці', 'Language': 'Мова', 'Interface': 'Інтерфейс', 'Moldova': 'Молдова', 'Hungary': 'Угорщина', 'Czech Republic': 'Чехія', 'Lithuania': 'Литва', 'Armenia': 'Вірменія',
+    'Units': 'Одиниці', 'Language': 'Мова', 'Interface': 'Інтерфейс', 'Moldova': 'Молдова', 'Radar colours': 'Кольори радара', 'Ventusky style': 'Стиль Ventusky', 'RainViewer original': 'Оригінал RainViewer', 'Hungary': 'Угорщина', 'Czech Republic': 'Чехія', 'Lithuania': 'Литва', 'Armenia': 'Вірменія',
     'Ukraine': 'Україна', 'Russia (European)': 'росія (європейська)', 'Türkiye': 'Туреччина', 'Romania': 'Румунія', 'Bulgaria': 'Болгарія',
     'Slovakia': 'Словаччина', 'Poland': 'Польща', 'Finland': 'Фінляндія', 'Germany': 'Німеччина', 'Belarus': 'білорусь',
     // quick layer bar
